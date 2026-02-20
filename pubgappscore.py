@@ -1,28 +1,24 @@
 import streamlit as st
 import pandas as pd
-import mysql.connector
-import os
-from dotenv import load_dotenv
 
-# 1. Carregar variáveis
-load_dotenv()
+# O Streamlit lida com as variáveis através do st.connection e Secrets
+# Não é mais necessário mysql.connector nem load_dotenv
 
 st.set_page_config(page_title="PUBG Squad Ranking", layout="wide", page_icon="🎮")
 
 def get_data():
     try:
-        conn = mysql.connector.connect(
-            host=os.getenv("DB_HOST"),
-            user=os.getenv("DB_USER"),
-            password=os.getenv("DB_PASSWORD"),
-            database=os.getenv("DB_NAME")
-        )
+        # 1. Conexão oficial do Streamlit para PostgreSQL (Supabase)
+        # Ele busca automaticamente o bloco [connections.postgresql] nos Secrets
+        conn = st.connection("postgresql", type="sql")
+        
+        # 2. Executa a query
         query = "SELECT * FROM ranking_squad"
-        df = pd.read_sql(query, conn)
-        conn.close()
+        df = conn.query(query, ttl="10m") # Cache de 10 minutos para economizar o banco
+        
         return df
     except Exception as e:
-        st.error(f"Erro na conexão: {e}")
+        st.error(f"Erro na conexão com o Supabase: {e}")
         return pd.DataFrame()
 
 def processar_ranking_completo(df_ranking, col_score):
@@ -35,7 +31,6 @@ def processar_ranking_completo(df_ranking, col_score):
     
     for i, row in df_ranking.iterrows():
         pos = i + 1
-        # Limpa emojis de execuções anteriores para evitar duplicidade
         nick_limpo = str(row['nick'])
         for e in ["💀", "💩", "👤", "🏅"]:
             nick_limpo = nick_limpo.replace(e, "").strip()
@@ -116,14 +111,8 @@ if not df_bruto.empty:
         f_elite = ((df_bruto['kr'] * 50) + ((df_bruto['headshots'] / df_bruto['partidas']) * 60) + (df_bruto['dano_medio'] / 5))
         renderizar_ranking(df_bruto.copy(), 'Score_Elite', f_elite)
 
-    # --- CRÉDITOS NO FINAL ---
     st.markdown("---")
-    st.markdown(
-        "<div style='text-align: center; color: gray; padding: 20px;'>"
-        "📊 <b>By Adriano Vieira</b>"
-        "</div>", 
-        unsafe_allow_html=True
-    )
+    st.markdown("<div style='text-align: center; color: gray; padding: 20px;'>📊 <b>By Adriano Vieira</b></div>", unsafe_allow_html=True)
 
 else:
-    st.error("Sem dados no banco.")
+    st.error("Sem dados no banco ou erro na conexão.")
