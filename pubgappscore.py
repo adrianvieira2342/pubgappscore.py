@@ -17,19 +17,18 @@ st.set_page_config(
 # =============================
 def get_data():
     try:
-        # Ajuste para Transaction Pooler (IPv4) e anti-cache
         db_url = st.secrets["DATABASE_URL"]
         
-        # Criamos o engine manualmente para garantir o pool_pre_ping com o Pooler
+        # Ajuste: Removido o isolamento manual e adicionado AUTOCOMMIT
+        # Isso evita que o SQLAlchemy abra blocos de transação desnecessários
         engine = create_engine(
             db_url, 
             pool_pre_ping=True,
-            pool_recycle=0
+            execution_options={"isolation_level": "AUTOCOMMIT"}
         )
         
         with engine.connect() as conn:
-            # Força o banco a ignorar sessões antigas
-            conn.execute(text("DISCARD ALL"))
+            # Removido o 'DISCARD ALL' que causava o erro
             # Query com Cache Buster para garantir dados novos
             query = text(f"SELECT * FROM ranking_squad -- refresh_{int(time.time())}")
             df = pd.read_sql(query, conn)
@@ -91,7 +90,6 @@ col_t, col_r = st.columns([0.8, 0.2])
 with col_t:
     st.markdown("# 🎮 Ranking Squad - Season 40")
 with col_r:
-    # Botão para forçar a limpeza do cache e recarregar
     if st.button("🔄 Atualizar Dados"):
         st.cache_data.clear()
         st.cache_resource.clear()
@@ -198,4 +196,4 @@ if not df_bruto.empty:
     )
 
 else:
-    st.info("Banco conectado. Aguardando inserção de dados na tabela 'ranking_squad'.")
+    st.info("Conectado. Se a tabela não aparecer, verifique se há dados no banco.")
