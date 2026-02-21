@@ -1,6 +1,7 @@
 import streamlit as st
 import pandas as pd
 from sqlalchemy import create_engine, text
+import time
 
 # =============================
 # CONFIGURAÇÃO DA PÁGINA
@@ -12,27 +13,34 @@ st.set_page_config(
 )
 
 # =============================
-# FUNÇÃO DE BUSCA DE DADOS (SEM CACHE)
+# FUNÇÃO DE BUSCA DE DADOS (FORÇA BRUTA)
 # =============================
-def get_data_fresh():
-    """
-    Usa SQLAlchemy direto para garantir que a conexão seja aberta e 
-    fechada a cada chamada, forçando a leitura dos dados mais recentes.
-    """
+def get_data_absolute_fresh():
     try:
-        # Pega a URL dos secrets
+        # 1. Pegamos a URL do banco
         db_url = st.secrets["DATABASE_URL"]
         
-        # Cria o engine sem pool de conexões persistentes para evitar dados antigos
-        engine = create_engine(db_url, pool_pre_ping=True)
+        # 2. Criamos o engine com isolamento total
+        # O pool_size=0 e max_overflow=0 garantem que a conexão morra após o uso
+        engine = create_engine(
+            db_url, 
+            pool_size=0, 
+            pool_recycle=0,
+            execution_options={"isolation_level": "AUTOCOMMIT"}
+        )
         
         with engine.connect() as conn:
-            query = text("SELECT * FROM ranking_squad")
+            # 3. CACHE BUSTER: Adicionamos um comentário com timestamp na query
+            # Isso força o Supabase e o PostgreSQL a tratarem como uma query nova
+            timestamp = int(time.time())
+            query = text(f"SELECT * FROM ranking_squad -- cache_buster_{timestamp}")
+            
+            # Executa e carrega
             df = pd.read_sql(query, conn)
             
         return df
     except Exception as e:
-        st.error(f"Erro ao buscar dados atualizados: {e}")
+        st.error(f"Erro crítico na busca de dados: {e}")
         return pd.DataFrame()
 
 # =============================
@@ -49,7 +57,6 @@ def processar_ranking_completo(df_ranking, col_score):
         pos = i + 1
         nick_limpo = str(row['nick'])
 
-        # Remove emojis para evitar duplicação visual
         for emoji in ["💀", "💩", "👤", "🏅"]:
             nick_limpo = nick_limpo.replace(emoji, "").strip()
 
@@ -78,32 +85,32 @@ def processar_ranking_completo(df_ranking, col_score):
 # =============================
 # INTERFACE PRINCIPAL
 # =============================
-col1, col2 = st.columns([0.8, 0.2])
-with col1:
-    st.markdown("# 🎮 Ranking Squad - Season 40")
-with col2:
-    if st.button("🔄 Forçar Atualização"):
-        st.cache_data.clear()
-        st.rerun()
+st.markdown("# 🎮 Ranking Squad - Season 40")
+
+# Botão de refresh que limpa TUDO
+if st.button("🔄 CLIQUE AQUI PARA SINCRONIZAR AGORA"):
+    st.cache_data.clear()
+    st.cache_resource.clear()
+    st.rerun()
 
 st.markdown("---")
 
-# Buscando dados SEMPRE que a página carrega
-df_bruto = get_data_fresh()
+# Busca os dados
+df_bruto = get_data_absolute_fresh()
 
 if not df_bruto.empty:
-    # Garante que 'partidas' seja tratado para evitar divisão por zero
-    df_bruto['partidas'] = df_bruto['partidas'].replace(0, 1)
+    # Garante que as colunas numéricas sejam tratadas
+    df_bruto['partidas'] = pd.to_numeric(df_bruto['partidas'], errors='coerce').fillna(1).replace(0, 1)
+    
+    # Debug opcional (descomente a linha abaixo se quiser ver se os números mudam no console)
+    # st.write(f"Última atualização interna: {time.strftime('%H:%M:%S')}")
 
     tab1, tab2, tab3 = st.tabs(["🔥 PRO", "🤝 TEAM", "🎯 ELITE"])
 
     def renderizar_ranking(df_local, col_score, formula):
         df_local[col_score] = formula.round(2)
-        
-        # Ordenar antes de processar zonas e emojis
         ranking_ordenado = df_local.sort_values(col_score, ascending=False).reset_index(drop=True)
 
-        # Metrics Top 3
         if len(ranking_ordenado) >= 3:
             m1, m2, m3 = st.columns(3)
             m1.metric("🥇 1º", ranking_ordenado.iloc[0]['nick'], f"{ranking_ordenado.iloc[0][col_score]} pts")
@@ -111,19 +118,13 @@ if not df_bruto.empty:
             m3.metric("🥉 3º", ranking_ordenado.iloc[2]['nick'], f"{ranking_ordenado.iloc[2][col_score]} pts")
 
         st.markdown("---")
-
         ranking_final = processar_ranking_completo(ranking_ordenado, col_score)
-
-        def highlight_zones(row):
-            if row['Classificação'] == "Elite Zone":
-                return ['background-color: #004d00; color: white; font-weight: bold'] * len(row)
-            if row['Classificação'] == "Cocô Zone":
-                return ['background-color: #4d2600; color: white; font-weight: bold'] * len(row)
-            return [''] * len(row)
 
         st.dataframe(
             ranking_final.style
-            .apply(highlight_zones, axis=1)
+            .apply(lambda row: ['background-color: #004d00; color: white' if row['Classificação'] == "Elite Zone" 
+                               else 'background-color: #4d2600; color: white' if row['Classificação'] == "Cocô Zone" 
+                               else '' for _ in row], axis=1)
             .background_gradient(cmap='YlGnBu', subset=[col_score])
             .format(precision=2),
             use_container_width=True,
@@ -131,20 +132,24 @@ if not df_bruto.empty:
             hide_index=True
         )
 
+    # Cálculos com cópia profunda para evitar interferência
     with tab1:
-        f_pro = (df_bruto['kr'] * 40) + (df_bruto['dano_medio'] / 8) + ((df_bruto['vitorias'] / df_bruto['partidas']) * 500)
-        renderizar_ranking(df_bruto.copy(), 'Score_Pro', f_pro)
+        d = df_bruto.copy()
+        f = (d['kr'] * 40) + (d['dano_medio'] / 8) + ((d['vitorias'] / d['partidas']) * 500)
+        renderizar_ranking(d, 'Score_Pro', f)
 
     with tab2:
-        f_team = ((df_bruto['vitorias'] / df_bruto['partidas']) * 1000) + ((df_bruto['revives'] / df_bruto['partidas']) * 50) + ((df_bruto['assists'] / df_bruto['partidas']) * 35)
-        renderizar_ranking(df_bruto.copy(), 'Score_Team', f_team)
+        d = df_bruto.copy()
+        f = ((d['vitorias'] / d['partidas']) * 1000) + ((d['revives'] / d['partidas']) * 50) + ((d['assists'] / d['partidas']) * 35)
+        renderizar_ranking(d, 'Score_Team', f)
 
     with tab3:
-        f_elite = (df_bruto['kr'] * 50) + ((df_bruto['headshots'] / df_bruto['partidas']) * 60) + (df_bruto['dano_medio'] / 5)
-        renderizar_ranking(df_bruto.copy(), 'Score_Elite', f_elite)
+        d = df_bruto.copy()
+        f = (d['kr'] * 50) + ((d['headshots'] / d['partidas']) * 60) + (d['dano_medio'] / 5)
+        renderizar_ranking(d, 'Score_Elite', f)
 
 else:
-    st.warning("Nenhum dado encontrado ou erro na conexão. Verifique o Supabase.")
+    st.error("Banco de dados retornou vazio. Verifique sua tabela 'ranking_squad'.")
 
 st.markdown("---")
-st.caption("📊 Sistema de Ranking Automático - Desenvolvido por Adriano Vieira")
+st.caption(f"Última leitura do banco às {time.strftime('%H:%M:%S')}")
