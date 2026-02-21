@@ -22,7 +22,7 @@ def get_data():
         )
 
         query = "SELECT * FROM ranking_squad"
-        df = conn.query(query, ttl="5m")
+        df = conn.query(query, ttl=0)
         return df
 
     except Exception as e:
