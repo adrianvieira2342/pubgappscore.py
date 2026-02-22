@@ -10,56 +10,73 @@ from streamlit_autorefresh import st_autorefresh
 # =========================================================
 st.set_page_config(page_title="PUBG Squad Ranking", layout="wide", page_icon="🎮")
 
-# Refresh a cada 3 minutos
+# Refresh visual a cada 3 minutos
 count = st_autorefresh(interval=180000, key="ranking_refresh")
 
 # =========================================================
-# 2. MOTOR DE IMPORTAÇÃO (LÓGICA FIEL AO SEU VS CODE)
+# 2. MOTOR DE IMPORTAÇÃO (COM SUA FUNÇÃO DE RATE LIMIT)
 # =========================================================
-def sync_data():
-    try:
-        API_KEY = st.secrets["PUBG_API_KEY"]
-        DB_URL = st.secrets["DATABASE_URL"]
-        engine = create_engine(DB_URL)
-        
-        headers = {
-            "Authorization": f"Bearer {API_KEY}",
-            "Accept": "application/vnd.api+json"
-        }
-        
-        players = [
-            "Adrian-Wan", "MironoteuCool", "FabioEspeto", "Mamutag_Komander",
-            "Robson_Foz", "MEIRAA", "EL-LOCORJ", "SalaminhoKBD",
-            "nelio_ponto_dev", "CARNEIROOO", "Kowalski_PR", "Zacouteguy",
-            "Sidors", "Takato_Matsuki", "cmm01", "Petrala", "Fumiga_BR"
-        ]
 
-        # 1. Detectar Temporada Atual
-        res_season = requests.get("https://api.pubg.com/shards/steam/seasons", headers=headers)
-        if res_season.status_code != 200: return False
+def sync_data():
+    API_KEY = st.secrets["PUBG_API_KEY"]
+    DB_URL = st.secrets["DATABASE_URL"]
+    engine = create_engine(DB_URL)
+    
+    headers = {
+        "Authorization": f"Bearer {API_KEY}",
+        "Accept": "application/vnd.api+json"
+    }
+
+    # SUA FUNÇÃO ORIGINAL DE REQUISIÇÃO
+    def fazer_requisicao(url):
+        for tentativa in range(3):
+            res = requests.get(url, headers=headers)
+            if res.status_code == 429:
+                st.sidebar.warning(f"⚠️ Rate Limit! Aguardando 30s...")
+                time.sleep(30)
+                continue
+            return res
+        return None
+
+    players = [
+        "Adrian-Wan", "MironoteuCool", "FabioEspeto", "Mamutag_Komander",
+        "Robson_Foz", "MEIRAA", "EL-LOCORJ", "SalaminhoKBD",
+        "nelio_ponto_dev", "CARNEIROOO", "Kowalski_PR", "Zacouteguy",
+        "Sidors", "Takato_Matsuki", "cmm01", "Petrala", "Fumiga_BR"
+    ]
+
+    try:
+        # 1. Detectar Temporada
+        res_season = fazer_requisicao("https://api.pubg.com/shards/steam/seasons")
+        if not res_season or res_season.status_code != 200:
+            return False
         current_season_id = next(s["id"] for s in res_season.json()["data"] if s["attributes"]["isCurrentSeason"])
 
         # 2. Limpar Tabela
         with engine.begin() as conn:
             conn.execute(text("DELETE FROM ranking_squad"))
 
-        status_text = st.sidebar.empty()
-
-        # 3. Processar Jogadores com TIME.SLEEP para evitar Rate Limit
+        status_bar = st.sidebar.progress(0)
+        
+        # 3. Loop de Jogadores
         for i, player in enumerate(players):
-            status_text.caption(f"Processando {i+1}/{len(players)}: {player}")
+            # Log de progresso na barra lateral
+            status_bar.progress((i + 1) / len(players))
+            st.sidebar.caption(f"Lendo: {player}")
+
+            # Busca ID do Player
+            res_p = fazer_requisicao(f"https://api.pubg.com/shards/steam/players?filter[playerNames]={player}")
             
-            res_p = requests.get(f"https://api.pubg.com/shards/steam/players?filter[playerNames]={player}", headers=headers)
-            
-            if res_p.status_code == 200:
+            if res_p and res_p.status_code == 200:
                 p_data = res_p.json()
                 if p_data.get("data"):
                     p_id = p_data["data"][0]["id"]
                     
-                    time.sleep(1.5) # --- SEU TIME.SLEEP ORIGINAL ---
-                    
-                    res_s = requests.get(f"https://api.pubg.com/shards/steam/players/{p_id}/seasons/{current_season_id}", headers=headers)
-                    if res_s.status_code == 200:
+                    time.sleep(1.5) # Seu sleep original entre chamadas
+
+                    # Busca Stats
+                    res_s = fazer_requisicao(f"https://api.pubg.com/shards/steam/players/{p_id}/seasons/{current_season_id}")
+                    if res_s and res_s.status_code == 200:
                         all_stats = res_s.json()["data"]["attributes"]["gameModeStats"]
                         stats = all_stats.get("squad", {})
                         
@@ -88,15 +105,31 @@ def sync_data():
                                     "assists": assists, "headshots": headshots, "revives": revives, "kill_dist_max": dist_max
                                 })
             
-            time.sleep(2.0) # --- SEU SEGUNDO TIME.SLEEP ORIGINAL ---
+            time.sleep(2.0) # Seu sleep original entre jogadores
+            
+        st.sidebar.success("✅ Sincronização Concluída!")
         return True
     except Exception as e:
-        st.sidebar.error(f"Erro: {e}")
+        st.sidebar.error(f"Erro Crítico: {e}")
         return False
 
+# Dispara a função se for a primeira vez ou se clicar no botão
+if count == 0:
+    sync_data()
+
+if st.sidebar.button("🔄 Sincronizar Manualmente"):
+    sync_data()
+
 # =========================================================
-# 3. LÓGICA DE LAYOUT (ZONAS E EMOJIS)
+# 3. INTERFACE E LAYOUT ORIGINAL REESTILIZADO
 # =========================================================
+
+def get_display_data():
+    try:
+        engine = create_engine(st.secrets["DATABASE_URL"])
+        return pd.read_sql("SELECT * FROM ranking_squad", engine)
+    except: return pd.DataFrame()
+
 def processar_visual(df_ranking, col_score):
     total = len(df_ranking)
     novos_nicks, zonas, posicoes = [], [], []
@@ -110,7 +143,7 @@ def processar_visual(df_ranking, col_score):
         posicoes.append(pos)
         if pos <= 3:
             novos_nicks.append(f"💀 {nick_limpo}"); zonas.append("Elite Zone")
-        elif pos > (total - 3):
+        elif pos > (total - 3) and total > 5:
             novos_nicks.append(f"💩 {nick_limpo}"); zonas.append("Cocô Zone")
         else:
             novos_nicks.append(f"👤 {nick_limpo}"); zonas.append("Medíocre Zone")
@@ -122,22 +155,7 @@ def processar_visual(df_ranking, col_score):
     cols = ['Pos', 'Classificação', 'nick', 'partidas', 'kr', 'vitorias', 'kills', 'assists', 'headshots', 'revives', 'kill_dist_max', 'dano_medio']
     return df_ranking[cols + [col_score]]
 
-# =========================================================
-# 4. INTERFACE PRINCIPAL
-# =========================================================
 st.markdown("# 🎮 Ranking Squad - Season 40")
-
-# Dispara sincronização
-if count == 0 or st.sidebar.button("🔄 Sincronizar API"):
-    with st.spinner("Buscando dados (isso leva 1 min devido ao Rate Limit)..."):
-        sync_data()
-
-def get_display_data():
-    try:
-        engine = create_engine(st.secrets["DATABASE_URL"])
-        return pd.read_sql("SELECT * FROM ranking_squad", engine)
-    except: return pd.DataFrame()
-
 df_bruto = get_display_data()
 
 if not df_bruto.empty:
@@ -148,7 +166,7 @@ if not df_bruto.empty:
         df_local[col_score] = formula.round(2)
         ranking_ordenado = df_local.sort_values(col_score, ascending=False).reset_index(drop=True)
         
-        # Top 3 Metrics
+        # TOP 3 CARDS
         if len(ranking_ordenado) >= 3:
             c1, c2, c3 = st.columns(3)
             c1.metric("🥇 1º", ranking_ordenado.iloc[0]['nick'], f"{ranking_ordenado.iloc[0][col_score]} pts")
@@ -158,6 +176,7 @@ if not df_bruto.empty:
         st.markdown("---")
         ranking_final = processar_visual(ranking_ordenado, col_score)
 
+        # CORES DAS ZONAS
         def highlight_zones(row):
             if row['Classificação'] == "Elite Zone": return ['background-color: #004d00; color: white; font-weight: bold'] * len(row)
             if row['Classificação'] == "Cocô Zone": return ['background-color: #4d2600; color: white; font-weight: bold'] * len(row)
@@ -169,14 +188,15 @@ if not df_bruto.empty:
             use_container_width=True, height=650, hide_index=True
         )
 
-    with tab1:
-        f = (df_bruto['kr']*40) + (df_bruto['dano_medio']/8) + ((df_bruto['vitorias']/df_bruto['partidas'])*100*5)
+    with tab1: # PRO SCORE
+        f = (df_bruto['kr']*40) + (df_bruto['dano_medio']/8) + ((df_bruto['vitorias']/df_bruto['partidas'])*500)
         renderizar(df_bruto.copy(), 'Score_PRO', f)
-    with tab2:
+    with tab2: # TEAM SCORE
         f = ((df_bruto['vitorias']/df_bruto['partidas'])*1000) + (df_bruto['revives']*10) + (df_bruto['assists']*5)
         renderizar(df_bruto.copy(), 'Score_TEAM', f)
-    with tab3:
+    with tab3: # ELITE SCORE
         f = (df_bruto['kr']*50) + ((df_bruto['headshots']/df_bruto['partidas'])*60) + (df_bruto['dano_medio']/5)
         renderizar(df_bruto.copy(), 'Score_ELITE', f)
+
 else:
-    st.info("Aguardando sincronização completa dos 17 jogadores...")
+    st.info("📊 Sincronizando dados com a API... Isso levará cerca de 2 minutos para processar todos os jogadores sem travar.")
