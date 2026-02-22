@@ -1,179 +1,135 @@
 import streamlit as st
 import pandas as pd
 import requests
-from sqlalchemy import create_engine
+import time
+from sqlalchemy import create_engine, text
 from streamlit_autorefresh import st_autorefresh
 
 # =========================================================
-# 1. CONFIGURAÇÃO E REFRESH
+# 1. CONFIGURAÇÃO E REFRESH AUTOMÁTICO
 # =========================================================
-st.set_page_config(page_title="PUBG DEBUG MODE", layout="wide", page_icon="🎮")
+st.set_page_config(page_title="PUBG Squad Ranking", layout="wide", page_icon="🎮")
 
-# Atualiza a página a cada 3 minutos
+# Refresh a cada 3 minutos
 count = st_autorefresh(interval=180000, key="ranking_refresh")
 
 # =========================================================
-# 2. MOTOR DE IMPORTAÇÃO (MODO DEBUG)
+# 2. MOTOR DE IMPORTAÇÃO (SUA LÓGICA DO VS CODE)
 # =========================================================
-def sync_api_to_supabase():
-    st.sidebar.header("🔍 Diagnóstico API")
+def sync_data():
     try:
-        # Verifica Secrets
-        if "PUBG_API_KEY" not in st.secrets or "DATABASE_URL" not in st.secrets:
-            st.sidebar.error("❌ Erro: Secrets não encontradas no Streamlit Cloud!")
-            return False
-
-        api_key = st.secrets["PUBG_API_KEY"]
-        db_url = st.secrets["DATABASE_URL"]
-        
-        # URL - ATENÇÃO: SUBSTITUA 'SEUS_IDS_AQUI' OU NADA SERÁ ATUALIZADO
-        url = "https://api.pubg.com/shards/steam/seasons/division.as.officials.pc-2024-40/gameMode/squad-fpp/players?filter[playerIds]=SEUS_IDS_AQUI"
+        API_KEY = st.secrets["PUBG_API_KEY"]
+        DB_URL = st.secrets["DATABASE_URL"]
+        engine = create_engine(DB_URL)
         
         headers = {
-            "Authorization": f"Bearer {api_key}",
+            "Authorization": f"Bearer {API_KEY}",
             "Accept": "application/vnd.api+json"
         }
-
-        st.sidebar.info("⏳ Chamando API do PUBG...")
-        response = requests.get(url, headers=headers, timeout=15)
         
-        if response.status_code == 200:
-            raw_data = response.json()
-            jogadores = []
+        players = [
+            "Adrian-Wan", "MironoteuCool", "FabioEspeto", "Mamutag_Komander",
+            "Robson_Foz", "MEIRAA", "EL-LOCORJ", "SalaminhoKBD",
+            "nelio_ponto_dev", "CARNEIROOO", "Kowalski_PR", "Zacouteguy",
+            "Sidors", "Takato_Matsuki", "cmm01", "Petrala", "Fumiga_BR"
+        ]
 
-            data_list = raw_data.get('data', [])
-            if not data_list:
-                st.sidebar.warning("⚠️ API conectou, mas a lista de jogadores veio vazia!")
-                return False
-
-            for item in data_list:
-                attr = item.get('attributes', {})
-                stats = attr.get('gameModeStats', {}).get('squad-fpp', {})
-                rounds = stats.get('roundsPlayed', 0)
-                
-                if rounds > 0:
-                    jogadores.append({
-                        'nick': attr.get('name', 'Unknown'),
-                        'partidas': rounds,
-                        'kr': round(stats.get('kills', 0) / max(stats.get('deaths', 1), 1), 2),
-                        'vitorias': stats.get('wins', 0),
-                        'kills': stats.get('kills', 0),
-                        'assists': stats.get('assists', 0),
-                        'headshots': stats.get('headshotKills', 0),
-                        'revives': stats.get('revives', 0),
-                        'kill_dist_max': round(stats.get('longestKill', 0), 2),
-                        'dano_medio': round(stats.get('damageDealt', 0) / rounds, 2)
-                    })
-
-            if jogadores:
-                df_novo = pd.DataFrame(jogadores)
-                st.sidebar.info(f"✅ {len(jogadores)} jogadores processados.")
-                
-                # Teste de Conexão com Banco
-                engine = create_engine(db_url)
-                df_novo.to_sql('ranking_squad', engine, if_exists='replace', index=False)
-                st.sidebar.success("🚀 Banco de dados atualizado!")
-                return True
-            else:
-                st.sidebar.error("❌ Os jogadores listados não jogaram nesta season.")
-        else:
-            st.sidebar.error(f"❌ Erro na API: Status {response.status_code}")
-            st.sidebar.write(response.text) # Mostra o erro bruto da API
+        # 1. Detectar Temporada Atual
+        res_season = requests.get("https://api.pubg.com/shards/steam/seasons", headers=headers)
+        if res_season.status_code != 200:
+            return False
             
-        return False
+        current_season_id = next(s["id"] for s in res_season.json()["data"] if s["attributes"]["isCurrentSeason"])
+
+        # 2. Limpar Tabela para nova carga
+        with engine.begin() as conn:
+            conn.execute(text("DELETE FROM ranking_squad"))
+
+        # 3. Processar Jogadores (Loop do seu VS Code)
+        for player in players:
+            # Busca ID do Player
+            res_p = requests.get(f"https://api.pubg.com/shards/steam/players?filter[playerNames]={player}", headers=headers)
+            if res_p.status_code == 200:
+                p_data = res_p.json()
+                if p_data.get("data"):
+                    p_id = p_data["data"][0]["id"]
+                    
+                    # Busca Stats do Player
+                    res_s = requests.get(f"https://api.pubg.com/shards/steam/players/{p_id}/seasons/{current_season_id}", headers=headers)
+                    if res_s.status_code == 200:
+                        all_stats = res_s.json()["data"]["attributes"]["gameModeStats"]
+                        stats = all_stats.get("squad", {}) # Mantendo 'squad' como no seu original
+                        
+                        partidas = stats.get("roundsPlayed", 0)
+                        if partidas > 0:
+                            # Sua lógica de cálculos original
+                            kills = stats.get("kills", 0)
+                            vitorias = stats.get("wins", 0)
+                            assists = stats.get("assists", 0)
+                            headshots = stats.get("headshotKills", 0)
+                            revives = stats.get("revives", 0)
+                            dano_total = stats.get("damageDealt", 0)
+                            dist_max = stats.get("longestKill", 0.0)
+                            
+                            kr = round(kills / partidas, 2)
+                            dano_medio = int(dano_total / partidas)
+                            
+                            # Salva no Banco
+                            with engine.begin() as conn:
+                                sql = text("""
+                                    INSERT INTO ranking_squad 
+                                    (nick, partidas, kr, vitorias, kills, dano_medio, assists, headshots, revives, kill_dist_max) 
+                                    VALUES (:nick, :partidas, :kr, :vitorias, :kills, :dano_medio, :assists, :headshots, :revives, :kill_dist_max)
+                                """)
+                                conn.execute(sql, {
+                                    "nick": player, "partidas": partidas, "kr": kr, 
+                                    "vitorias": vitorias, "kills": kills, "dano_medio": dano_medio,
+                                    "assists": assists, "headshots": headshots, "revives": revives, "kill_dist_max": dist_max
+                                })
+            time.sleep(1) # Delay para evitar bloqueio da API
+        return True
     except Exception as e:
-        st.sidebar.error(f"💥 Falha Crítica: {str(e)}")
+        st.sidebar.error(f"Erro: {e}")
         return False
 
-# Executa a sincronização
-sync_api_to_supabase()
+# Executa o motor do seu VS Code dentro do Streamlit
+if count == 0 or st.sidebar.button("🔄 Forçar Atualização"):
+    with st.spinner("Sincronizando com API PUBG..."):
+        sync_data()
 
 # =========================================================
-# 3. LEITURA DE DADOS
+# 3. INTERFACE (RANKING)
 # =========================================================
-def get_data():
+def get_display_data():
     try:
         engine = create_engine(st.secrets["DATABASE_URL"])
-        df = pd.read_sql("SELECT * FROM ranking_squad", engine)
-        return df
-    except Exception as e:
-        st.sidebar.error(f"Erro ao ler banco: {e}")
+        return pd.read_sql("SELECT * FROM ranking_squad", engine)
+    except:
         return pd.DataFrame()
 
-# =========================================================
-# 4. PROCESSAMENTO E LAYOUT (ORIGINAL)
-# =========================================================
-def processar_ranking_completo(df_ranking, col_score):
-    total = len(df_ranking)
-    novos_nicks, zonas, posicoes = [], [], []
-    df_ranking = df_ranking.reset_index(drop=True)
-
-    for i, row in df_ranking.iterrows():
-        pos = i + 1
-        nick_limpo = str(row['nick'])
-        for emoji in ["💀", "💩", "👤", "🏅"]:
-            nick_limpo = nick_limpo.replace(emoji, "").strip()
-
-        posicoes.append(pos)
-        if pos <= 3:
-            novos_nicks.append(f"💀 {nick_limpo}"); zonas.append("Elite Zone")
-        elif pos > (total - 3):
-            novos_nicks.append(f"💩 {nick_limpo}"); zonas.append("Cocô Zone")
-        else:
-            novos_nicks.append(f"👤 {nick_limpo}"); zonas.append("Medíocre Zone")
-
-    df_ranking['Pos'] = posicoes
-    df_ranking['nick'] = novos_nicks
-    df_ranking['Classificação'] = zonas
-
-    cols = ['Pos', 'Classificação', 'nick', 'partidas', 'kr', 'vitorias', 
-            'kills', 'assists', 'headshots', 'revives', 'kill_dist_max', 'dano_medio']
-    return df_ranking[cols + [col_score]]
-
-# =========================================================
-# 5. INTERFACE PRINCIPAL
-# =========================================================
-st.markdown("# 🎮 Ranking Squad - Season 40")
-st.caption(f"Refresh ID: {count}")
-
-df_bruto = get_data()
+st.title("🎮 Ranking Squad - Temporada Atual")
+df_bruto = get_display_data()
 
 if not df_bruto.empty:
-    df_bruto['partidas'] = df_bruto['partidas'].replace(0, 1)
     tab1, tab2, tab3 = st.tabs(["🔥 PRO", "🤝 TEAM", "🎯 ELITE"])
 
-    def renderizar_ranking(df_local, col_score, formula):
+    # Fórmulas de pontuação que você usa
+    def aplicar_layout(df_local, col_score, formula):
         df_local[col_score] = formula.round(2)
-        ranking_ordenado = df_local.sort_values(col_score, ascending=False).reset_index(drop=True)
-        
-        if len(ranking_ordenado) >= 3:
-            c1, c2, c3 = st.columns(3)
-            c1.metric("🥇 1º", ranking_ordenado.iloc[0]['nick'], f"{ranking_ordenado.iloc[0][col_score]} pts")
-            c2.metric("🥈 2º", ranking_ordenado.iloc[1]['nick'], f"{ranking_ordenado.iloc[1][col_score]} pts")
-            c3.metric("🥉 3º", ranking_ordenado.iloc[2]['nick'], f"{ranking_ordenado.iloc[2][col_score]} pts")
-
-        st.markdown("---")
-        ranking_final = processar_ranking_completo(ranking_ordenado, col_score)
-
-        def highlight_zones(row):
-            if row['Classificação'] == "Elite Zone": return ['background-color: #004d00; color: white'] * len(row)
-            if row['Classificação'] == "Cocô Zone": return ['background-color: #4d2600; color: white'] * len(row)
-            return [''] * len(row)
-
-        st.dataframe(
-            ranking_final.style.background_gradient(cmap='YlGnBu', subset=[col_score])
-            .apply(highlight_zones, axis=1).format(precision=2),
-            use_container_width=True, height=650, hide_index=True
-        )
+        df_local = df_local.sort_values(col_score, ascending=False).reset_index(drop=True)
+        st.dataframe(df_local, use_container_width=True)
 
     with tab1:
-        f = (df_bruto['kr']*40) + (df_bruto['dano_medio']/8) + ((df_bruto['vitorias']/df_bruto['partidas'])*500)
-        renderizar_ranking(df_bruto.copy(), 'Score_Pro', f)
+        # F_PRO: Baseada na sua lógica de score
+        f = (df_bruto['kr']*40) + (df_bruto['dano_medio']/8) + ((df_bruto['vitorias']/df_bruto['partidas'])*100*2)
+        aplicar_layout(df_bruto.copy(), 'Score_PRO', f)
+    
     with tab2:
-        f = ((df_bruto['vitorias']/df_bruto['partidas'])*1000) + ((df_bruto['revives']/df_bruto['partidas'])*50)
-        renderizar_ranking(df_bruto.copy(), 'Score_Team', f)
+        f = (df_bruto['assists']*10) + (df_bruto['revives']*5)
+        aplicar_layout(df_bruto.copy(), 'Score_TEAM', f)
+        
     with tab3:
-        f = (df_bruto['kr']*50) + ((df_bruto['headshots']/df_bruto['partidas'])*60) + (df_bruto['dano_medio']/5)
-        renderizar_ranking(df_bruto.copy(), 'Score_Elite', f)
+        f = (df_bruto['kr']*50) + (df_bruto['headshots']*15)
+        aplicar_layout(df_bruto.copy(), 'Score_ELITE', f)
 else:
-    st.warning("⚠️ Banco de dados ainda não sincronizado. Verifique o diagnóstico na barra lateral.")
+    st.info("Aguardando carregamento dos dados pela primeira vez...")
