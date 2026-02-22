@@ -12,6 +12,35 @@ st.set_page_config(
 )
 
 # =============================
+# VARIÁVEL GLOBAL PARA ATUALIZAÇÃO
+# =============================
+if 'ultima_atualizacao_memoria' not in st.session_state:
+    st.session_state['ultima_atualizacao_memoria'] = datetime.min
+
+def precisa_atualizar():
+    """Retorna True se passou mais de 5 minutos desde a última atualização"""
+    return (datetime.now() - st.session_state['ultima_atualizacao_memoria']) > timedelta(minutes=5)
+
+def registrar_atualizacao():
+    st.session_state['ultima_atualizacao_memoria'] = datetime.now()
+
+# =============================
+# FUNÇÃO PARA ATUALIZAR DADOS DO RANKING
+# =============================
+def atualizar_ranking(conn):
+    st.info("Atualizando ranking automaticamente...")
+
+    # ============================
+    # Aqui você coloca a lógica do pubg_import.py
+    # Exemplo mínimo usando a PUBG_API_KEY:
+    # api_key = st.secrets["PUBG_API_KEY"]
+    # df_api = buscar_api_pubg(api_key)
+    # atualizar_banco(conn, df_api)
+    # ============================
+
+    registrar_atualizacao()
+
+# =============================
 # CONEXÃO COM BANCO (POSTGRES)
 # =============================
 def get_conn():
@@ -27,53 +56,13 @@ def get_conn():
         return None
 
 # =============================
-# VERIFICAÇÃO DE ATUALIZAÇÃO (5 minutos)
-# =============================
-def precisa_atualizar(conn):
-    try:
-        response = conn.query("SELECT ultima_atualizacao FROM config").df
-        if response.empty:
-            return True
-        ultima = pd.to_datetime(response.iloc[0, 0])
-        return (datetime.now() - ultima) > timedelta(minutes=5)
-    except Exception as e:
-        st.error(f"Erro ao checar última atualização: {e}")
-        return False
-
-def registrar_atualizacao(conn):
-    try:
-        if conn.query("SELECT * FROM config").df.empty:
-            conn.query(f"INSERT INTO config (ultima_atualizacao) VALUES ('{datetime.now()}')")
-        else:
-            conn.query(f"UPDATE config SET ultima_atualizacao = '{datetime.now()}'")
-    except Exception as e:
-        st.error(f"Erro ao registrar atualização: {e}")
-
-# =============================
-# FUNÇÃO PARA ATUALIZAR DADOS DO RANKING
-# =============================
-def atualizar_ranking(conn):
-    st.info("Atualizando ranking automaticamente...")
-    
-    # ===========================================
-    # Aqui você coloca a lógica do seu pubg_import.py
-    # Exemplo mínimo usando PUBG_API_KEY:
-    # api_key = st.secrets["PUBG_API_KEY"]
-    # df_api = buscar_api_pubg(api_key)
-    # atualizar_banco(conn, df_api)
-    # ===========================================
-    
-    registrar_atualizacao(conn)
-
-# =============================
 # BUSCAR DADOS DO RANKING
 # =============================
-def get_data():
-    conn = get_conn()
+def get_data(conn):
     if not conn:
         return pd.DataFrame()
     try:
-        df = conn.query("SELECT * FROM ranking_squad").df
+        df = conn.query("SELECT * FROM ranking_squad")
         return df
     except Exception as e:
         st.error(f"Erro na consulta do ranking: {e}")
@@ -124,7 +113,7 @@ def processar_ranking_completo(df_ranking, col_score):
 # ATUALIZAÇÃO AUTOMÁTICA
 # =============================
 conn = get_conn()
-if conn and precisa_atualizar(conn):
+if conn and precisa_atualizar():
     atualizar_ranking(conn)
 
 # =============================
@@ -133,7 +122,7 @@ if conn and precisa_atualizar(conn):
 st.markdown("# 🎮 Ranking Squad - Season 40")
 st.markdown("---")
 
-df_bruto = get_data()
+df_bruto = get_data(conn)
 
 if not df_bruto.empty:
     df_bruto['partidas'] = df_bruto['partidas'].replace(0, 1)
