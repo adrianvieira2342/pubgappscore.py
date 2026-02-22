@@ -1,261 +1,175 @@
 import streamlit as st
-import pandas as pd
 import requests
-import time
-from sqlalchemy import text
+import pandas as pd
+from sqlalchemy import create_engine, text
 
 # =============================
 # CONFIGURAÇÃO DA PÁGINA
 # =============================
 st.set_page_config(
-    page_title="PUBG Squad Ranking",
+    page_title="Ranking Squad - Season Atual",
     layout="wide",
     page_icon="🎮"
 )
 
+st.title("🎮 Ranking Squad - Season Atual (Normal TPP)")
+
 # =============================
-# ATUALIZAÇÃO AUTOMÁTICA (SEASON 40 - SQUAD TPP)
+# CONFIGURAÇÕES (SECRETS)
 # =============================
-def atualizar_dados_supabase():
-    try:
-        conn = st.connection(
-            "postgresql",
-            type="sql",
-            url=st.secrets["DATABASE_URL"]
-        )
+API_KEY = st.secrets["PUBG_API_KEY"]
+DATABASE_URL = st.secrets["DATABASE_URL"]
 
-        api_key = st.secrets["PUBG_API_KEY"]
+engine = create_engine(DATABASE_URL)
 
-        headers = {
-            "Authorization": f"Bearer {api_key}",
-            "Accept": "application/vnd.api+json"
-        }
+headers = {
+    "Authorization": f"Bearer {API_KEY}",
+    "Accept": "application/vnd.api+json"
+}
 
-        # 🔥 BUSCAR TODAS AS SEASONS
-        season_url = "https://api.pubg.com/shards/steam/seasons"
-        r_season = requests.get(season_url, headers=headers)
+# =============================
+# FUNÇÃO PARA PEGAR SEASON ATUAL
+# =============================
+@st.cache_data(ttl=3600)
+def get_current_season():
+    url = "https://api.pubg.com/shards/steam/seasons"
+    response = requests.get(url, headers=headers)
 
-        if r_season.status_code != 200:
-            st.error("Erro ao buscar seasons")
-            return
+    if response.status_code != 200:
+        st.error("Erro ao buscar season atual")
+        return None
 
-        seasons = r_season.json()["data"]
+    seasons = response.json()["data"]
 
-        # 🔥 FILTRAR SEASON 40
-        season_id = next(
-            s["id"] for s in seasons if "40" in s["id"]
-        )
+    current_season = next(
+        s["id"] for s in seasons
+        if s["attributes"]["isCurrentSeason"] is True
+    )
 
-        # 🔥 BUSCAR JOGADORES NO BANCO
-        jogadores = conn.query("SELECT nick FROM ranking_squad", ttl=0)
+    return current_season
 
-        for _, row in jogadores.iterrows():
-            nick = row["nick"]
+# =============================
+# FUNÇÃO PARA PEGAR PLAYER ID
+# =============================
+def get_player_id(nickname):
+    url = f"https://api.pubg.com/shards/steam/players?filter[playerNames]={nickname}"
+    response = requests.get(url, headers=headers)
 
-            # BUSCAR PLAYER ID
-            player_url = f"https://api.pubg.com/shards/steam/players?filter[playerNames]={nick}"
-            r_player = requests.get(player_url, headers=headers)
+    if response.status_code != 200:
+        return None
 
-            if r_player.status_code != 200 or not r_player.json()["data"]:
+    data = response.json()["data"]
+    if not data:
+        return None
+
+    return data[0]["id"]
+
+# =============================
+# FUNÇÃO PARA PEGAR STATS (SQUAD NORMAL TPP)
+# =============================
+def get_squad_stats(player_id, season_id):
+    url = f"https://api.pubg.com/shards/steam/players/{player_id}/seasons/{season_id}"
+    response = requests.get(url, headers=headers)
+
+    if response.status_code != 200:
+        return None
+
+    data = response.json()
+    game_modes = data["data"]["attributes"]["gameModeStats"]
+
+    # 🔥 SOMENTE SQUAD NORMAL TPP
+    stats = game_modes.get("squad")
+
+    return stats
+
+# =============================
+# ATUALIZAR DADOS
+# =============================
+if st.button("🔄 Atualizar Dados"):
+
+    season_id = get_current_season()
+
+    if not season_id:
+        st.stop()
+
+    with engine.connect() as conn:
+
+        players = conn.execute(text("SELECT id, nick FROM ranking_squad")).fetchall()
+
+        for player in players:
+
+            player_id_api = get_player_id(player.nick)
+
+            if not player_id_api:
                 continue
 
-            player_id = r_player.json()["data"][0]["id"]
+            stats = get_squad_stats(player_id_api, season_id)
 
-            # BUSCAR STATS DA SEASON 40
-            stats_url = f"https://api.pubg.com/shards/steam/players/{player_id}/seasons/{season_id}"
-            r_stats = requests.get(stats_url, headers=headers)
-
-            if r_stats.status_code != 200:
+            if not stats:
                 continue
-
-            stats_json = r_stats.json()
-            game_modes = stats_json["data"]["attributes"]["gameModeStats"]
-
-            # 🔥 APENAS SQUAD (TPP)
-            if "squad" not in game_modes:
-                continue
-
-            stats = game_modes["squad"]
 
             partidas = stats.get("roundsPlayed", 0)
-            if partidas == 0:
-                continue
-
+            vitorias = stats.get("wins", 0)
             kills = stats.get("kills", 0)
             assists = stats.get("assists", 0)
+            dano = stats.get("damageDealt", 0)
             headshots = stats.get("headshotKills", 0)
             revives = stats.get("revives", 0)
-            vitorias = stats.get("wins", 0)
-            dano_total = stats.get("damageDealt", 0)
-            kill_dist_max = stats.get("longestKill", 0)
+            longest_kill = stats.get("longestKill", 0)
 
-            kr = kills / partidas
-            dano_medio = dano_total / partidas
+            kd = round(kills / partidas, 2) if partidas > 0 else 0
+            dano_medio = round(dano / partidas, 2) if partidas > 0 else 0
 
-            update_sql = text("""
+            score = round(
+                (kills * 2) +
+                (assists * 1.5) +
+                (vitorias * 5) +
+                (dano_medio * 0.01) +
+                (headshots * 1.5) +
+                (revives * 1.2),
+                2
+            )
+
+            conn.execute(text("""
                 UPDATE ranking_squad
                 SET partidas = :partidas,
+                    kr = :kd,
+                    vitorias = :vitorias,
                     kills = :kills,
+                    dano_medio = :dano_medio,
                     assists = :assists,
                     headshots = :headshots,
                     revives = :revives,
-                    vitorias = :vitorias,
-                    kr = :kr,
-                    dano_medio = :dano_medio,
-                    kill_dist_max = :kill_dist_max
-                WHERE nick = :nick
-            """)
+                    kill_dist_max = :longest_kill,
+                    score = :score
+                WHERE id = :id
+            """), {
+                "partidas": partidas,
+                "kd": kd,
+                "vitorias": vitorias,
+                "kills": kills,
+                "dano_medio": dano_medio,
+                "assists": assists,
+                "headshots": headshots,
+                "revives": revives,
+                "longest_kill": longest_kill,
+                "score": score,
+                "id": player.id
+            })
 
-            with conn.session as session:
-                session.execute(update_sql, {
-                    "partidas": partidas,
-                    "kills": kills,
-                    "assists": assists,
-                    "headshots": headshots,
-                    "revives": revives,
-                    "vitorias": vitorias,
-                    "kr": kr,
-                    "dano_medio": dano_medio,
-                    "kill_dist_max": kill_dist_max,
-                    "nick": nick
-                })
-                session.commit()
+        conn.commit()
 
-            time.sleep(1)
-
-    except Exception as e:
-        st.error(f"Erro ao atualizar dados: {e}")
-
+    st.success("✅ Dados atualizados com sucesso!")
 
 # =============================
-# CONEXÃO COM BANCO
+# EXIBIR RANKING
 # =============================
-def get_data():
-    try:
-        conn = st.connection(
-            "postgresql",
-            type="sql",
-            url=st.secrets["DATABASE_URL"]
-        )
+df = pd.read_sql("""
+    SELECT nick, partidas, kr, vitorias, kills,
+           dano_medio, assists, headshots,
+           revives, kill_dist_max, score
+    FROM ranking_squad
+    ORDER BY score DESC
+""", engine)
 
-        query = "SELECT * FROM ranking_squad"
-        return conn.query(query, ttl=0)
-
-    except Exception as e:
-        st.error(f"Erro na conexão com o banco: {e}")
-        return pd.DataFrame()
-
-
-# =============================
-# PROCESSAMENTO DO RANKING
-# =============================
-def processar_ranking_completo(df_ranking, col_score):
-    total = len(df_ranking)
-    novos_nicks = []
-    zonas = []
-    posicoes = []
-
-    df_ranking = df_ranking.reset_index(drop=True)
-
-    for i, row in df_ranking.iterrows():
-        pos = i + 1
-        nick_limpo = str(row['nick'])
-
-        for emoji in ["💀", "💩", "👤", "🏅"]:
-            nick_limpo = nick_limpo.replace(emoji, "").strip()
-
-        posicoes.append(pos)
-
-        if pos <= 3:
-            novos_nicks.append(f"💀 {nick_limpo}")
-            zonas.append("Elite Zone")
-        elif pos > (total - 3):
-            novos_nicks.append(f"💩 {nick_limpo}")
-            zonas.append("Cocô Zone")
-        else:
-            novos_nicks.append(f"👤 {nick_limpo}")
-            zonas.append("Medíocre Zone")
-
-    df_ranking['Pos'] = posicoes
-    df_ranking['nick'] = novos_nicks
-    df_ranking['Classificação'] = zonas
-
-    cols_base = [
-        'Pos', 'Classificação', 'nick',
-        'partidas', 'kr', 'vitorias',
-        'kills', 'assists', 'headshots',
-        'revives', 'kill_dist_max', 'dano_medio'
-    ]
-
-    return df_ranking[cols_base + [col_score]]
-
-
-# =============================
-# INTERFACE
-# =============================
-st.markdown("# 🎮 Ranking Squad - Season 40")
-st.markdown("---")
-
-with st.spinner("Atualizando dados da Season 40..."):
-    atualizar_dados_supabase()
-
-df_bruto = get_data()
-
-if not df_bruto.empty:
-
-    df_bruto['partidas'] = df_bruto['partidas'].replace(0, 1)
-
-    tab1, tab2, tab3 = st.tabs([
-        "🔥 PRO (Equilibrado)",
-        "🤝 TEAM (Suporte)",
-        "🎯 ELITE (Skill)"
-    ])
-
-    def renderizar_ranking(df_local, col_score, formula):
-
-        df_local[col_score] = formula.round(2)
-        ranking_ordenado = df_local.sort_values(
-            col_score,
-            ascending=False
-        ).reset_index(drop=True)
-
-        ranking_final = processar_ranking_completo(
-            ranking_ordenado,
-            col_score
-        )
-
-        st.dataframe(
-            ranking_final.style
-            .background_gradient(cmap='YlGnBu', subset=[col_score])
-            .format(precision=2),
-            use_container_width=True,
-            height=650,
-            hide_index=True
-        )
-
-    with tab1:
-        f_pro = (
-            (df_bruto['kr'] * 40)
-            + (df_bruto['dano_medio'] / 8)
-            + ((df_bruto['vitorias'] / df_bruto['partidas']) * 100 * 5)
-        )
-        renderizar_ranking(df_bruto.copy(), 'Score_Pro', f_pro)
-
-    with tab2:
-        f_team = (
-            ((df_bruto['vitorias'] / df_bruto['partidas']) * 100 * 10)
-            + ((df_bruto['revives'] / df_bruto['partidas']) * 50)
-            + ((df_bruto['assists'] / df_bruto['partidas']) * 35)
-        )
-        renderizar_ranking(df_bruto.copy(), 'Score_Team', f_team)
-
-    with tab3:
-        f_elite = (
-            (df_bruto['kr'] * 50)
-            + ((df_bruto['headshots'] / df_bruto['partidas']) * 60)
-            + (df_bruto['dano_medio'] / 5)
-        )
-        renderizar_ranking(df_bruto.copy(), 'Score_Elite', f_elite)
-
-else:
-    st.warning("Nenhum dado encontrado na tabela ranking_squad.")
+st.dataframe(df, use_container_width=True)
