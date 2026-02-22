@@ -1,5 +1,7 @@
 import streamlit as st
 import pandas as pd
+import requests
+import time
 
 # =============================
 # CONFIGURAÇÃO DA PÁGINA
@@ -9,6 +11,83 @@ st.set_page_config(
     layout="wide",
     page_icon="🎮"
 )
+
+# =============================
+# ATUALIZAÇÃO AUTOMÁTICA (API → SUPABASE)
+# =============================
+def atualizar_dados_supabase():
+    try:
+        conn = st.connection(
+            "postgresql",
+            type="sql",
+            url=st.secrets["DATABASE_URL"]
+        )
+
+        api_key = st.secrets["PUBG_API_KEY"]
+
+        jogadores = conn.query("SELECT nick FROM ranking_squad", ttl=0)
+
+        headers = {
+            "Authorization": f"Bearer {api_key}",
+            "Accept": "application/vnd.api+json"
+        }
+
+        for _, row in jogadores.iterrows():
+            nick = row["nick"]
+
+            # 🔥 BUSCAR PLAYER ID
+            player_url = f"https://api.pubg.com/shards/steam/players?filter[playerNames]={nick}"
+            response_player = requests.get(player_url, headers=headers)
+
+            if response_player.status_code != 200:
+                continue
+
+            player_data = response_player.json()["data"][0]
+            player_id = player_data["id"]
+
+            # 🔥 BUSCAR STATS DA TEMPORADA
+            stats_url = f"https://api.pubg.com/shards/steam/players/{player_id}/seasons/lifetime"
+            response_stats = requests.get(stats_url, headers=headers)
+
+            if response_stats.status_code != 200:
+                continue
+
+            stats = response_stats.json()["data"]["attributes"]["gameModeStats"]["squad"]
+
+            partidas = stats.get("roundsPlayed", 0)
+            kills = stats.get("kills", 0)
+            assists = stats.get("assists", 0)
+            headshots = stats.get("headshotKills", 0)
+            revives = stats.get("revives", 0)
+            vitorias = stats.get("wins", 0)
+            dano_total = stats.get("damageDealt", 0)
+            kill_dist_max = stats.get("longestKill", 0)
+
+            kr = kills / partidas if partidas > 0 else 0
+            dano_medio = dano_total / partidas if partidas > 0 else 0
+
+            # 🔥 ATUALIZA BANCO
+            update_query = f"""
+                UPDATE ranking_squad
+                SET partidas = {partidas},
+                    kills = {kills},
+                    assists = {assists},
+                    headshots = {headshots},
+                    revives = {revives},
+                    vitorias = {vitorias},
+                    kr = {kr},
+                    dano_medio = {dano_medio},
+                    kill_dist_max = {kill_dist_max}
+                WHERE nick = '{nick}'
+            """
+
+            conn.query(update_query, ttl=0)
+
+            time.sleep(1)  # evita limite da API
+
+    except Exception as e:
+        st.error(f"Erro ao atualizar dados: {e}")
+
 
 # =============================
 # CONEXÃO COM BANCO (SUPABASE)
@@ -31,54 +110,15 @@ def get_data():
 
 
 # =============================
-# PROCESSAMENTO DO RANKING
-# =============================
-def processar_ranking_completo(df_ranking, col_score):
-    total = len(df_ranking)
-    novos_nicks = []
-    zonas = []
-    posicoes = []
-
-    df_ranking = df_ranking.reset_index(drop=True)
-
-    for i, row in df_ranking.iterrows():
-        pos = i + 1
-        nick_limpo = str(row['nick'])
-
-        for emoji in ["💀", "💩", "👤", "🏅"]:
-            nick_limpo = nick_limpo.replace(emoji, "").strip()
-
-        posicoes.append(pos)
-
-        if pos <= 3:
-            novos_nicks.append(f"💀 {nick_limpo}")
-            zonas.append("Elite Zone")
-        elif pos > (total - 3):
-            novos_nicks.append(f"💩 {nick_limpo}")
-            zonas.append("Cocô Zone")
-        else:
-            novos_nicks.append(f"👤 {nick_limpo}")
-            zonas.append("Medíocre Zone")
-
-    df_ranking['Pos'] = posicoes
-    df_ranking['nick'] = novos_nicks
-    df_ranking['Classificação'] = zonas
-
-    cols_base = [
-        'Pos', 'Classificação', 'nick',
-        'partidas', 'kr', 'vitorias',
-        'kills', 'assists', 'headshots',
-        'revives', 'kill_dist_max', 'dano_medio'
-    ]
-
-    return df_ranking[cols_base + [col_score]]
-
-
-# =============================
 # INTERFACE
 # =============================
 st.markdown("# 🎮 Ranking Squad - Season 40")
 st.markdown("---")
+
+st.cache_data.clear()
+
+# 🔥 ATUALIZA SEMPRE QUE CARREGAR
+atualizar_dados_supabase()
 
 df_bruto = get_data()
 
@@ -100,49 +140,8 @@ if not df_bruto.empty:
             ascending=False
         ).reset_index(drop=True)
 
-        if len(ranking_ordenado) >= 3:
-            top1, top2, top3 = st.columns(3)
-
-            with top1:
-                st.metric(
-                    "🥇 1º Lugar",
-                    ranking_ordenado.iloc[0]['nick'],
-                    f"{ranking_ordenado.iloc[0][col_score]} pts"
-                )
-
-            with top2:
-                st.metric(
-                    "🥈 2º Lugar",
-                    ranking_ordenado.iloc[1]['nick'],
-                    f"{ranking_ordenado.iloc[1][col_score]} pts"
-                )
-
-            with top3:
-                st.metric(
-                    "🥉 3º Lugar",
-                    ranking_ordenado.iloc[2]['nick'],
-                    f"{ranking_ordenado.iloc[2][col_score]} pts"
-                )
-
-        st.markdown("---")
-
-        ranking_final = processar_ranking_completo(
-            ranking_ordenado,
-            col_score
-        )
-
-        def highlight_zones(row):
-            if row['Classificação'] == "Elite Zone":
-                return ['background-color: #004d00; color: white; font-weight: bold'] * len(row)
-            if row['Classificação'] == "Cocô Zone":
-                return ['background-color: #4d2600; color: white; font-weight: bold'] * len(row)
-            return [''] * len(row)
-
         st.dataframe(
-            ranking_final.style
-            .background_gradient(cmap='YlGnBu', subset=[col_score])
-            .apply(highlight_zones, axis=1)
-            .format(precision=2),
+            ranking_ordenado,
             use_container_width=True,
             height=650,
             hide_index=True
@@ -172,11 +171,5 @@ if not df_bruto.empty:
         )
         renderizar_ranking(df_bruto.copy(), 'Score_Elite', f_elite)
 
-    st.markdown("---")
-    st.markdown(
-        "<div style='text-align: center; color: gray; padding: 20px;'>📊 <b>By Adriano Vieira</b></div>",
-        unsafe_allow_html=True
-    )
-
 else:
-    st.info("Banco conectado. Aguardando inserção de dados na tabela 'ranking_squad'.")
+    st.info("Banco conectado. Aguardando inserção de dados.")
