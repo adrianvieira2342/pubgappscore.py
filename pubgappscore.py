@@ -2,6 +2,7 @@ import streamlit as st
 import pandas as pd
 from datetime import datetime, timedelta
 import requests
+import time
 
 # =============================
 # CONFIGURAÇÃO DA PÁGINA
@@ -13,7 +14,7 @@ st.set_page_config(
 )
 
 # =============================
-# VARIÁVEL GLOBAL PARA ATUALIZAÇÃO
+# VARIÁVEL GLOBAL PARA CONTROLE DE TEMPO
 # =============================
 if 'ultima_atualizacao_memoria' not in st.session_state:
     st.session_state['ultima_atualizacao_memoria'] = datetime.min
@@ -25,41 +26,52 @@ def registrar_atualizacao():
     st.session_state['ultima_atualizacao_memoria'] = datetime.now()
 
 # =============================
-# CONEXÃO COM BANCO (POSTGRES)
+# CONEXÃO COM BANCO
 # =============================
-def get_conn():
+def get_data():
     try:
         conn = st.connection(
             "postgresql",
             type="sql",
             url=st.secrets["DATABASE_URL"]
         )
-        return conn
+        query = "SELECT * FROM ranking_squad"
+        df = conn.query(query, ttl=0)
+        return df
     except Exception as e:
-        st.error(f"Erro ao conectar com o banco: {e}")
-        return None
+        st.error(f"Erro na conexão com o banco: {e}")
+        return pd.DataFrame()
 
 # =============================
-# FUNÇÃO PARA BUSCAR DADOS DO PUBG
+# FUNÇÃO PARA ATUALIZAR RANKING
 # =============================
-def buscar_api_pubg(api_key, player_list):
-    """
-    Retorna DataFrame com dados de cada jogador
-    player_list: lista de nicks para puxar dados
-    """
-    all_data = []
-    headers = {
-        "Authorization": f"Bearer {api_key}",
-        "Accept": "application/vnd.api+json"
-    }
+def atualizar_ranking():
+    st.info("Atualizando ranking automaticamente...")
+
+    api_key = st.secrets["PUBG_API_KEY"]
+
+    # pegar nicks existentes no banco
+    df_nicks = get_data()
+    if df_nicks.empty:
+        st.info("Nenhum nick encontrado para atualizar.")
+        registrar_atualizacao()
+        return
+
+    conn = st.connection("postgresql", type="sql", url=st.secrets["DATABASE_URL"])
+    player_list = df_nicks['nick'].tolist()
 
     for nick in player_list:
-        url = f"https://api.pubg.com/shards/steam/players?filter[playerNames]={nick}"
         try:
+            # chamada à API usando o método que você já tem
+            url = f"https://api.pubg.com/shards/steam/players?filter[playerNames]={nick}"
+            headers = {
+                "Authorization": f"Bearer {api_key}",
+                "Accept": "application/vnd.api+json"
+            }
             resp = requests.get(url, headers=headers)
             if resp.status_code == 200:
                 data = resp.json()
-                # exemplo: extrair stats
+                # processar os dados do player como no pubg_import.py
                 stats = {
                     "nick": nick,
                     "partidas": data.get('data', [{}])[0].get('stats', {}).get('matches', 0),
@@ -72,67 +84,35 @@ def buscar_api_pubg(api_key, player_list):
                     "kill_dist_max": data.get('data', [{}])[0].get('stats', {}).get('longestKill', 0),
                     "dano_medio": data.get('data', [{}])[0].get('stats', {}).get('damageDealt', 0)
                 }
-                all_data.append(stats)
+                # atualizar o banco, mantendo a lógica de pubg_import.py
+                conn.query(
+                    """
+                    INSERT INTO ranking_squad (nick, partidas, kr, vitorias, kills, assists, headshots, revives, kill_dist_max, dano_medio)
+                    VALUES (:nick, :partidas, :kr, :vitorias, :kills, :assists, :headshots, :revives, :kill_dist_max, :dano_medio)
+                    ON CONFLICT (nick) DO UPDATE SET
+                        partidas = EXCLUDED.partidas,
+                        kr = EXCLUDED.kr,
+                        vitorias = EXCLUDED.vitorias,
+                        kills = EXCLUDED.kills,
+                        assists = EXCLUDED.assists,
+                        headshots = EXCLUDED.headshots,
+                        revives = EXCLUDED.revives,
+                        kill_dist_max = EXCLUDED.kill_dist_max,
+                        dano_medio = EXCLUDED.dano_medio
+                    """,
+                    params=stats
+                )
             else:
                 st.warning(f"Falha ao buscar dados de {nick}: {resp.status_code}")
+            # Mantém taxa de requests original do seu código
+            time.sleep(1)  # 1 segundo entre requests (ajuste conforme seu pubg_import.py)
         except Exception as e:
-            st.warning(f"Erro ao buscar dados de {nick}: {e}")
+            st.warning(f"Erro ao atualizar {nick}: {e}")
 
-    return pd.DataFrame(all_data)
-
-# =============================
-# FUNÇÃO PARA ATUALIZAR BANCO
-# =============================
-def atualizar_banco(conn, df):
-    """
-    Atualiza tabela ranking_squad com os dados do DataFrame
-    """
-    for _, row in df.iterrows():
-        # insere ou atualiza pelo nick
-        conn.query(f"""
-            INSERT INTO ranking_squad (nick, partidas, kr, vitorias, kills, assists, headshots, revives, kill_dist_max, dano_medio)
-            VALUES ('{row['nick']}', {row['partidas']}, {row['kr']}, {row['vitorias']}, {row['kills']}, {row['assists']}, {row['headshots']}, {row['revives']}, {row['kill_dist_max']}, {row['dano_medio']})
-            ON CONFLICT (nick) DO UPDATE SET
-                partidas = EXCLUDED.partidas,
-                kr = EXCLUDED.kr,
-                vitorias = EXCLUDED.vitorias,
-                kills = EXCLUDED.kills,
-                assists = EXCLUDED.assists,
-                headshots = EXCLUDED.headshots,
-                revives = EXCLUDED.revives,
-                kill_dist_max = EXCLUDED.kill_dist_max,
-                dano_medio = EXCLUDED.dano_medio;
-        """)
-
-# =============================
-# FUNÇÃO PARA ATUALIZAR RANKING
-# =============================
-def atualizar_ranking(conn):
-    st.info("Atualizando ranking automaticamente...")
-
-    api_key = st.secrets["PUBG_API_KEY"]
-
-    # buscar lista de nicks no banco
-    try:
-        df_nicks = conn.query("SELECT nick FROM ranking_squad")
-        if df_nicks.empty:
-            st.info("Nenhum nick encontrado para atualizar.")
-            registrar_atualizacao()
-            return
-        player_list = df_nicks['nick'].tolist()
-    except Exception as e:
-        st.error(f"Erro ao buscar lista de nicks: {e}")
-        return
-
-    # buscar dados da API PUBG
-    df_api = buscar_api_pubg(api_key, player_list)
-
-    if not df_api.empty:
-        atualizar_banco(conn, df_api)
     registrar_atualizacao()
 
 # =============================
-# FUNÇÕES DE PROCESSAMENTO E INTERFACE
+# PROCESSAMENTO DO RANKING
 # =============================
 def processar_ranking_completo(df_ranking, col_score):
     total = len(df_ranking)
@@ -172,51 +152,17 @@ def processar_ranking_completo(df_ranking, col_score):
 
     return df_ranking[cols_base + [col_score]]
 
-def renderizar_ranking(df_bruto, col_score, formula):
-    df_bruto[col_score] = formula.round(2)
-    ranking_ordenado = df_bruto.sort_values(col_score, ascending=False).reset_index(drop=True)
-
-    if len(ranking_ordenado) >= 3:
-        top1, top2, top3 = st.columns(3)
-        with top1:
-            st.metric("🥇 1º Lugar", ranking_ordenado.iloc[0]['nick'], f"{ranking_ordenado.iloc[0][col_score]} pts")
-        with top2:
-            st.metric("🥈 2º Lugar", ranking_ordenado.iloc[1]['nick'], f"{ranking_ordenado.iloc[1][col_score]} pts")
-        with top3:
-            st.metric("🥉 3º Lugar", ranking_ordenado.iloc[2]['nick'], f"{ranking_ordenado.iloc[2][col_score]} pts")
-
-    st.markdown("---")
-
-    ranking_final = processar_ranking_completo(ranking_ordenado, col_score)
-
-    def highlight_zones(row):
-        if row['Classificação'] == "Elite Zone":
-            return ['background-color: #004d00; color: white; font-weight: bold'] * len(row)
-        if row['Classificação'] == "Cocô Zone":
-            return ['background-color: #4d2600; color: white; font-weight: bold'] * len(row)
-        return [''] * len(row)
-
-    st.dataframe(
-        ranking_final.style
-        .background_gradient(cmap='YlGnBu', subset=[col_score])
-        .apply(highlight_zones, axis=1)
-        .format(precision=2),
-        use_container_width=True,
-        height=650,
-        hide_index=True
-    )
-
 # =============================
-# RODAR APP
+# INTERFACE
 # =============================
-conn = get_conn()
-if conn and precisa_atualizar():
-    atualizar_ranking(conn)
+# Atualiza ranking se necessário
+if precisa_atualizar():
+    atualizar_ranking()
 
 st.markdown("# 🎮 Ranking Squad - Season 40")
 st.markdown("---")
 
-df_bruto = conn.query("SELECT * FROM ranking_squad") if conn else pd.DataFrame()
+df_bruto = get_data()
 
 if not df_bruto.empty:
     df_bruto['partidas'] = df_bruto['partidas'].replace(0, 1)
@@ -227,14 +173,51 @@ if not df_bruto.empty:
         "🎯 ELITE (Skill)"
     ])
 
-    f_pro = (df_bruto['kr'] * 40) + (df_bruto['dano_medio'] / 8) + ((df_bruto['vitorias'] / df_bruto['partidas']) * 100 * 5)
-    renderizar_ranking(df_bruto.copy(), 'Score_Pro', f_pro)
+    def renderizar_ranking(df_local, col_score, formula):
+        df_local[col_score] = formula.round(2)
+        ranking_ordenado = df_local.sort_values(col_score, ascending=False).reset_index(drop=True)
 
-    f_team = ((df_bruto['vitorias'] / df_bruto['partidas']) * 100 * 10) + ((df_bruto['revives'] / df_bruto['partidas']) * 50) + ((df_bruto['assists'] / df_bruto['partidas']) * 35)
-    renderizar_ranking(df_bruto.copy(), 'Score_Team', f_team)
+        if len(ranking_ordenado) >= 3:
+            top1, top2, top3 = st.columns(3)
+            with top1:
+                st.metric("🥇 1º Lugar", ranking_ordenado.iloc[0]['nick'], f"{ranking_ordenado.iloc[0][col_score]} pts")
+            with top2:
+                st.metric("🥈 2º Lugar", ranking_ordenado.iloc[1]['nick'], f"{ranking_ordenado.iloc[1][col_score]} pts")
+            with top3:
+                st.metric("🥉 3º Lugar", ranking_ordenado.iloc[2]['nick'], f"{ranking_ordenado.iloc[2][col_score]} pts")
 
-    f_elite = (df_bruto['kr'] * 50) + ((df_bruto['headshots'] / df_bruto['partidas']) * 60) + (df_bruto['dano_medio'] / 5)
-    renderizar_ranking(df_bruto.copy(), 'Score_Elite', f_elite)
+        st.markdown("---")
+
+        ranking_final = processar_ranking_completo(ranking_ordenado, col_score)
+
+        def highlight_zones(row):
+            if row['Classificação'] == "Elite Zone":
+                return ['background-color: #004d00; color: white; font-weight: bold'] * len(row)
+            if row['Classificação'] == "Cocô Zone":
+                return ['background-color: #4d2600; color: white; font-weight: bold'] * len(row)
+            return [''] * len(row)
+
+        st.dataframe(
+            ranking_final.style
+            .background_gradient(cmap='YlGnBu', subset=[col_score])
+            .apply(highlight_zones, axis=1)
+            .format(precision=2),
+            use_container_width=True,
+            height=650,
+            hide_index=True
+        )
+
+    with tab1:
+        f_pro = (df_bruto['kr'] * 40) + (df_bruto['dano_medio'] / 8) + ((df_bruto['vitorias'] / df_bruto['partidas']) * 100 * 5)
+        renderizar_ranking(df_bruto.copy(), 'Score_Pro', f_pro)
+
+    with tab2:
+        f_team = ((df_bruto['vitorias'] / df_bruto['partidas']) * 100 * 10) + ((df_bruto['revives'] / df_bruto['partidas']) * 50) + ((df_bruto['assists'] / df_bruto['partidas']) * 35)
+        renderizar_ranking(df_bruto.copy(), 'Score_Team', f_team)
+
+    with tab3:
+        f_elite = (df_bruto['kr'] * 50) + ((df_bruto['headshots'] / df_bruto['partidas']) * 60) + (df_bruto['dano_medio'] / 5)
+        renderizar_ranking(df_bruto.copy(), 'Score_Elite', f_elite)
 
     st.markdown("---")
     st.markdown("<div style='text-align: center; color: gray; padding: 20px;'>📊 <b>By Adriano Vieira</b></div>", unsafe_allow_html=True)
