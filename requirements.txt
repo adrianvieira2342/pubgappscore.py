@@ -1,5 +1,7 @@
 streamlit
 pandas
+supabase
+pymysql
 psycopg2-binary
 SQLAlchemy
 matplotlib
