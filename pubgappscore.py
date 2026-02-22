@@ -1,5 +1,8 @@
 import streamlit as st
 import pandas as pd
+import requests
+import time
+from sqlalchemy import text
 
 # =============================
 # CONFIGURAÇÃO DA PÁGINA
@@ -11,7 +14,121 @@ st.set_page_config(
 )
 
 # =============================
-# CONEXÃO COM BANCO (SUPABASE)
+# ATUALIZAÇÃO AUTOMÁTICA (SEASON 40 - SQUAD TPP)
+# =============================
+def atualizar_dados_supabase():
+    try:
+        conn = st.connection(
+            "postgresql",
+            type="sql",
+            url=st.secrets["DATABASE_URL"]
+        )
+
+        api_key = st.secrets["PUBG_API_KEY"]
+
+        headers = {
+            "Authorization": f"Bearer {api_key}",
+            "Accept": "application/vnd.api+json"
+        }
+
+        # 🔥 BUSCAR TODAS AS SEASONS
+        season_url = "https://api.pubg.com/shards/steam/seasons"
+        r_season = requests.get(season_url, headers=headers)
+
+        if r_season.status_code != 200:
+            st.error("Erro ao buscar seasons")
+            return
+
+        seasons = r_season.json()["data"]
+
+        # 🔥 FILTRAR SEASON 40
+        season_id = next(
+            s["id"] for s in seasons if "40" in s["id"]
+        )
+
+        # 🔥 BUSCAR JOGADORES NO BANCO
+        jogadores = conn.query("SELECT nick FROM ranking_squad", ttl=0)
+
+        for _, row in jogadores.iterrows():
+            nick = row["nick"]
+
+            # BUSCAR PLAYER ID
+            player_url = f"https://api.pubg.com/shards/steam/players?filter[playerNames]={nick}"
+            r_player = requests.get(player_url, headers=headers)
+
+            if r_player.status_code != 200 or not r_player.json()["data"]:
+                continue
+
+            player_id = r_player.json()["data"][0]["id"]
+
+            # BUSCAR STATS DA SEASON 40
+            stats_url = f"https://api.pubg.com/shards/steam/players/{player_id}/seasons/{season_id}"
+            r_stats = requests.get(stats_url, headers=headers)
+
+            if r_stats.status_code != 200:
+                continue
+
+            stats_json = r_stats.json()
+            game_modes = stats_json["data"]["attributes"]["gameModeStats"]
+
+            # 🔥 APENAS SQUAD (TPP)
+            if "squad" not in game_modes:
+                continue
+
+            stats = game_modes["squad"]
+
+            partidas = stats.get("roundsPlayed", 0)
+            if partidas == 0:
+                continue
+
+            kills = stats.get("kills", 0)
+            assists = stats.get("assists", 0)
+            headshots = stats.get("headshotKills", 0)
+            revives = stats.get("revives", 0)
+            vitorias = stats.get("wins", 0)
+            dano_total = stats.get("damageDealt", 0)
+            kill_dist_max = stats.get("longestKill", 0)
+
+            kr = kills / partidas
+            dano_medio = dano_total / partidas
+
+            update_sql = text("""
+                UPDATE ranking_squad
+                SET partidas = :partidas,
+                    kills = :kills,
+                    assists = :assists,
+                    headshots = :headshots,
+                    revives = :revives,
+                    vitorias = :vitorias,
+                    kr = :kr,
+                    dano_medio = :dano_medio,
+                    kill_dist_max = :kill_dist_max
+                WHERE nick = :nick
+            """)
+
+            with conn.session as session:
+                session.execute(update_sql, {
+                    "partidas": partidas,
+                    "kills": kills,
+                    "assists": assists,
+                    "headshots": headshots,
+                    "revives": revives,
+                    "vitorias": vitorias,
+                    "kr": kr,
+                    "dano_medio": dano_medio,
+                    "kill_dist_max": kill_dist_max,
+                    "nick": nick
+                })
+                session.commit()
+
+            time.sleep(1)
+
+    except Exception as e:
+        st.error(f"Erro ao atualizar dados: {e}")
+
+
+# =============================
+# CONEXÃO COM BANCO
 # =============================
 def get_data():
     try:
@@ -22,8 +139,7 @@ def get_data():
         )
 
         query = "SELECT * FROM ranking_squad"
-        df = conn.query(query, ttl=0)
-        return df
+        return conn.query(query, ttl=0)
 
     except Exception as e:
         st.error(f"Erro na conexão com o banco: {e}")
@@ -77,12 +193,11 @@ def processar_ranking_completo(df_ranking, col_score):
 # =============================
 # INTERFACE
 # =============================
-st.markdown("# 🎮 Ranking Squad - Season Atual")
+st.markdown("# 🎮 Ranking Squad - Season 40")
 st.markdown("---")
 
-# 🔎 DEBUG TEMPORÁRIO
-st.write("DATABASE_URL usada pelo Streamlit:")
-st.write(st.secrets["DATABASE_URL"])
+with st.spinner("Atualizando dados da Season 40..."):
+    atualizar_dados_supabase()
 
 df_bruto = get_data()
 
@@ -104,48 +219,14 @@ if not df_bruto.empty:
             ascending=False
         ).reset_index(drop=True)
 
-        if len(ranking_ordenado) >= 3:
-            top1, top2, top3 = st.columns(3)
-
-            with top1:
-                st.metric(
-                    "🥇 1º Lugar",
-                    ranking_ordenado.iloc[0]['nick'],
-                    f"{ranking_ordenado.iloc[0][col_score]} pts"
-                )
-
-            with top2:
-                st.metric(
-                    "🥈 2º Lugar",
-                    ranking_ordenado.iloc[1]['nick'],
-                    f"{ranking_ordenado.iloc[1][col_score]} pts"
-                )
-
-            with top3:
-                st.metric(
-                    "🥉 3º Lugar",
-                    ranking_ordenado.iloc[2]['nick'],
-                    f"{ranking_ordenado.iloc[2][col_score]} pts"
-                )
-
-        st.markdown("---")
-
         ranking_final = processar_ranking_completo(
             ranking_ordenado,
             col_score
         )
 
-        def highlight_zones(row):
-            if row['Classificação'] == "Elite Zone":
-                return ['background-color: #004d00; color: white; font-weight: bold'] * len(row)
-            if row['Classificação'] == "Cocô Zone":
-                return ['background-color: #4d2600; color: white; font-weight: bold'] * len(row)
-            return [''] * len(row)
-
         st.dataframe(
             ranking_final.style
             .background_gradient(cmap='YlGnBu', subset=[col_score])
-            .apply(highlight_zones, axis=1)
             .format(precision=2),
             use_container_width=True,
             height=650,
@@ -176,11 +257,5 @@ if not df_bruto.empty:
         )
         renderizar_ranking(df_bruto.copy(), 'Score_Elite', f_elite)
 
-    st.markdown("---")
-    st.markdown(
-        "<div style='text-align: center; color: gray; padding: 20px;'>📊 <b>By Adriano Vieira</b></div>",
-        unsafe_allow_html=True
-    )
-
 else:
-    st.info("Banco conectado. Aguardando inserção de dados na tabela 'ranking_squad'.")
+    st.warning("Nenhum dado encontrado na tabela ranking_squad.")
