@@ -49,14 +49,21 @@ def registrar_atualizacao():
 # FUNÇÃO PARA ATUALIZAR DADOS DO RANKING
 # =============================
 def atualizar_ranking():
+    # =================================
     # Coloque aqui a lógica do seu pubg_import.py
-    # Exemplo: buscar dados da API e atualizar a tabela ranking_squad
+    # Exemplo: buscar dados da API PUBG e atualizar a tabela ranking_squad
+    # =================================
     st.info("Atualizando ranking automaticamente...")
+    
+    # Exemplo mínimo:
+    # df_api = buscar_api_pubg()
+    # atualizar_banco(df_api)
+    
     # Depois de atualizar, registra a hora
     registrar_atualizacao()
 
 # =============================
-# CONEXÃO COM BANCO (SUPABASE)
+# CONEXÃO COM BANCO (SUPABASE / PostgreSQL)
 # =============================
 def get_data():
     try:
