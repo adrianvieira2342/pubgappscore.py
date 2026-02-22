@@ -2,6 +2,7 @@ import streamlit as st
 import pandas as pd
 import requests
 import time
+from sqlalchemy import text
 
 # =============================
 # CONFIGURAÇÃO DA PÁGINA
@@ -13,7 +14,7 @@ st.set_page_config(
 )
 
 # =============================
-# ATUALIZAÇÃO AUTOMÁTICA (API → SUPABASE)
+# ATUALIZAÇÃO AUTOMÁTICA
 # =============================
 def atualizar_dados_supabase():
     try:
@@ -35,24 +36,24 @@ def atualizar_dados_supabase():
         for _, row in jogadores.iterrows():
             nick = row["nick"]
 
-            # 🔥 BUSCAR PLAYER ID
+            # 🔹 BUSCAR PLAYER
             player_url = f"https://api.pubg.com/shards/steam/players?filter[playerNames]={nick}"
-            response_player = requests.get(player_url, headers=headers)
+            r_player = requests.get(player_url, headers=headers)
 
-            if response_player.status_code != 200:
+            if r_player.status_code != 200:
                 continue
 
-            player_data = response_player.json()["data"][0]
+            player_data = r_player.json()["data"][0]
             player_id = player_data["id"]
 
-            # 🔥 BUSCAR STATS DA TEMPORADA
+            # 🔹 BUSCAR STATS
             stats_url = f"https://api.pubg.com/shards/steam/players/{player_id}/seasons/lifetime"
-            response_stats = requests.get(stats_url, headers=headers)
+            r_stats = requests.get(stats_url, headers=headers)
 
-            if response_stats.status_code != 200:
+            if r_stats.status_code != 200:
                 continue
 
-            stats = response_stats.json()["data"]["attributes"]["gameModeStats"]["squad"]
+            stats = r_stats.json()["data"]["attributes"]["gameModeStats"]["squad"]
 
             partidas = stats.get("roundsPlayed", 0)
             kills = stats.get("kills", 0)
@@ -66,31 +67,43 @@ def atualizar_dados_supabase():
             kr = kills / partidas if partidas > 0 else 0
             dano_medio = dano_total / partidas if partidas > 0 else 0
 
-            # 🔥 ATUALIZA BANCO
-            update_query = f"""
+            update_sql = text("""
                 UPDATE ranking_squad
-                SET partidas = {partidas},
-                    kills = {kills},
-                    assists = {assists},
-                    headshots = {headshots},
-                    revives = {revives},
-                    vitorias = {vitorias},
-                    kr = {kr},
-                    dano_medio = {dano_medio},
-                    kill_dist_max = {kill_dist_max}
-                WHERE nick = '{nick}'
-            """
+                SET partidas = :partidas,
+                    kills = :kills,
+                    assists = :assists,
+                    headshots = :headshots,
+                    revives = :revives,
+                    vitorias = :vitorias,
+                    kr = :kr,
+                    dano_medio = :dano_medio,
+                    kill_dist_max = :kill_dist_max
+                WHERE nick = :nick
+            """)
 
-            conn.query(update_query, ttl=0)
+            with conn.session as session:
+                session.execute(update_sql, {
+                    "partidas": partidas,
+                    "kills": kills,
+                    "assists": assists,
+                    "headshots": headshots,
+                    "revives": revives,
+                    "vitorias": vitorias,
+                    "kr": kr,
+                    "dano_medio": dano_medio,
+                    "kill_dist_max": kill_dist_max,
+                    "nick": nick
+                })
+                session.commit()
 
-            time.sleep(1)  # evita limite da API
+            time.sleep(1)
 
     except Exception as e:
         st.error(f"Erro ao atualizar dados: {e}")
 
 
 # =============================
-# CONEXÃO COM BANCO (SUPABASE)
+# CONEXÃO COM BANCO
 # =============================
 def get_data():
     try:
@@ -100,8 +113,7 @@ def get_data():
             url=st.secrets["DATABASE_URL"]
         )
 
-        query = "SELECT * FROM ranking_squad"
-        df = conn.query(query, ttl=0)
+        df = conn.query("SELECT * FROM ranking_squad", ttl=0)
         return df
 
     except Exception as e:
@@ -117,7 +129,7 @@ st.markdown("---")
 
 st.cache_data.clear()
 
-# 🔥 ATUALIZA SEMPRE QUE CARREGAR
+# 🔥 ATUALIZA SEMPRE AO CARREGAR
 atualizar_dados_supabase()
 
 df_bruto = get_data()
@@ -133,15 +145,15 @@ if not df_bruto.empty:
     ])
 
     def renderizar_ranking(df_local, col_score, formula):
-
         df_local[col_score] = formula.round(2)
-        ranking_ordenado = df_local.sort_values(
+
+        ranking = df_local.sort_values(
             col_score,
             ascending=False
         ).reset_index(drop=True)
 
         st.dataframe(
-            ranking_ordenado,
+            ranking,
             use_container_width=True,
             height=650,
             hide_index=True
