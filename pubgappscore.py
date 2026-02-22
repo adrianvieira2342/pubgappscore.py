@@ -1,5 +1,7 @@
 import streamlit as st
 import pandas as pd
+from datetime import datetime, timedelta
+from supabase import create_client
 
 # =============================
 # CONFIGURAÇÃO DA PÁGINA
@@ -9,6 +11,49 @@ st.set_page_config(
     layout="wide",
     page_icon="🎮"
 )
+
+# =============================
+# CONFIGURAÇÃO SUPABASE
+# =============================
+SUPABASE_URL = st.secrets["SUPABASE_URL"]
+SUPABASE_KEY = st.secrets["SUPABASE_KEY"]
+sb = create_client(SUPABASE_URL, SUPABASE_KEY)
+
+# =============================
+# VERIFICAÇÃO DE ATUALIZAÇÃO (5 minutos)
+# =============================
+def precisa_atualizar():
+    try:
+        response = sb.table("config").select("ultima_atualizacao").execute()
+        if not response.data:
+            return True  # Se não existe registro, atualiza
+
+        ultima = datetime.fromisoformat(response.data[0]["ultima_atualizacao"])
+        if datetime.now() - ultima > timedelta(minutes=5):
+            return True
+        return False
+    except Exception as e:
+        st.error(f"Erro ao checar última atualização: {e}")
+        return False
+
+def registrar_atualizacao():
+    try:
+        if sb.table("config").select("*").execute().data:
+            sb.table("config").update({"ultima_atualizacao": datetime.now().isoformat()}).execute()
+        else:
+            sb.table("config").insert({"ultima_atualizacao": datetime.now().isoformat()}).execute()
+    except Exception as e:
+        st.error(f"Erro ao registrar atualização: {e}")
+
+# =============================
+# FUNÇÃO PARA ATUALIZAR DADOS DO RANKING
+# =============================
+def atualizar_ranking():
+    # Coloque aqui a lógica do seu pubg_import.py
+    # Exemplo: buscar dados da API e atualizar a tabela ranking_squad
+    st.info("Atualizando ranking automaticamente...")
+    # Depois de atualizar, registra a hora
+    registrar_atualizacao()
 
 # =============================
 # CONEXÃO COM BANCO (SUPABASE)
@@ -21,9 +66,8 @@ def get_data():
             url=st.secrets["DATABASE_URL"]
         )
 
-        query = "SELECT * FROM ranking_squad ORDER BY score DESC"
+        query = "SELECT * FROM ranking_squad"
         df = conn.query(query, ttl=0)
-
         return df
 
     except Exception as e:
@@ -76,16 +120,22 @@ def processar_ranking_completo(df_ranking, col_score):
 
 
 # =============================
+# ATUALIZAÇÃO AUTOMÁTICA
+# =============================
+if precisa_atualizar():
+    atualizar_ranking()
+
+
+# =============================
 # INTERFACE
 # =============================
-st.markdown("# 🎮 Ranking Squad - Season Atual (Normal TPP)")
+st.markdown("# 🎮 Ranking Squad - Season 40")
 st.markdown("---")
 
 df_bruto = get_data()
 
 if not df_bruto.empty:
 
-    # 🔥 Evita divisão por zero
     df_bruto['partidas'] = df_bruto['partidas'].replace(0, 1)
 
     tab1, tab2, tab3 = st.tabs([
@@ -97,7 +147,6 @@ if not df_bruto.empty:
     def renderizar_ranking(df_local, col_score, formula):
 
         df_local[col_score] = formula.round(2)
-
         ranking_ordenado = df_local.sort_values(
             col_score,
             ascending=False
@@ -150,10 +199,6 @@ if not df_bruto.empty:
             height=650,
             hide_index=True
         )
-
-    # =============================
-    # ABAS
-    # =============================
 
     with tab1:
         f_pro = (
