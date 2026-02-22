@@ -2,23 +2,25 @@ import streamlit as st
 import pandas as pd
 from streamlit_autorefresh import st_autorefresh
 
-# =============================
-# CONFIGURAÇÃO DA PÁGINA
-# =============================
+# =========================================================
+# 1. CONFIGURAÇÃO DA PÁGINA E ATUALIZAÇÃO AUTOMÁTICA
+# =========================================================
 st.set_page_config(
     page_title="PUBG Squad Ranking",
     layout="wide",
     page_icon="🎮"
 )
 
-# Atualiza a página a cada 3 minutos (180000ms)
-count = st_autorefresh(interval=180000, key="ranking_refresh")
+# Configura o refresh para 180.000ms (3 minutos)
+# O retorno 'count' aumenta a cada atualização, servindo como log visual
+count = st_autorefresh(interval=180000, limit=None, key="ranking_auto_refresh")
 
-# =============================
-# CONEXÃO COM BANCO (SUPABASE)
-# =============================
+# =========================================================
+# 2. CONEXÃO COM BANCO (SUPABASE)
+# =========================================================
 def get_data():
     try:
+        # Criando a conexão com os segredos do Streamlit
         conn = st.connection(
             "postgresql",
             type="sql",
@@ -26,7 +28,9 @@ def get_data():
         )
 
         query = "SELECT * FROM ranking_squad"
-        # ttl=0 é essencial para não ler dados antigos do cache
+        
+        # O segredo para dados novos é o ttl=0 (Time To Live zero)
+        # Isso força o app a buscar no banco a cada execução do script
         df = conn.query(query, ttl=0)
         return df
 
@@ -35,9 +39,9 @@ def get_data():
         return pd.DataFrame()
 
 
-# =============================
-# PROCESSAMENTO DO RANKING
-# =============================
+# =========================================================
+# 3. PROCESSAMENTO DO RANKING (LÓGICA DE EXIBIÇÃO)
+# =========================================================
 def processar_ranking_completo(df_ranking, col_score):
     total = len(df_ranking)
     novos_nicks = []
@@ -50,6 +54,7 @@ def processar_ranking_completo(df_ranking, col_score):
         pos = i + 1
         nick_limpo = str(row['nick'])
 
+        # Limpa emojis antigos para não duplicar no re-processamento
         for emoji in ["💀", "💩", "👤", "🏅"]:
             nick_limpo = nick_limpo.replace(emoji, "").strip()
 
@@ -79,17 +84,19 @@ def processar_ranking_completo(df_ranking, col_score):
     return df_ranking[cols_base + [col_score]]
 
 
-# =============================
-# INTERFACE
-# =============================
+# =========================================================
+# 4. INTERFACE DO USUÁRIO
+# =========================================================
 st.markdown("# 🎮 Ranking Squad - Season 40")
-st.caption(f"🔄 Atualizando automaticamente a cada 3 min. (Refresh ID: {count})")
+st.caption(f"🔄 Dados atualizados automaticamente a cada 3 min. (ID de Ciclo: {count})")
 st.markdown("---")
 
+# Busca os dados no banco
 df_bruto = get_data()
 
 if not df_bruto.empty:
 
+    # Tratamento básico para evitar divisão por zero
     df_bruto['partidas'] = df_bruto['partidas'].replace(0, 1)
 
     tab1, tab2, tab3 = st.tabs([
@@ -106,36 +113,23 @@ if not df_bruto.empty:
             ascending=False
         ).reset_index(drop=True)
 
+        # Exibe o Top 3 em colunas (Métricas)
         if len(ranking_ordenado) >= 3:
             top1, top2, top3 = st.columns(3)
 
             with top1:
-                st.metric(
-                    "🥇 1º Lugar",
-                    ranking_ordenado.iloc[0]['nick'],
-                    f"{ranking_ordenado.iloc[0][col_score]} pts"
-                )
+                st.metric("🥇 1º Lugar", ranking_ordenado.iloc[0]['nick'], f"{ranking_ordenado.iloc[0][col_score]} pts")
 
             with top2:
-                st.metric(
-                    "🥈 2º Lugar",
-                    ranking_ordenado.iloc[1]['nick'],
-                    f"{ranking_ordenado.iloc[1][col_score]} pts"
-                )
+                st.metric("🥈 2º Lugar", ranking_ordenado.iloc[1]['nick'], f"{ranking_ordenado.iloc[1][col_score]} pts")
 
             with top3:
-                st.metric(
-                    "🥉 3º Lugar",
-                    ranking_ordenado.iloc[2]['nick'],
-                    f"{ranking_ordenado.iloc[2][col_score]} pts"
-                )
+                st.metric("🥉 3º Lugar", ranking_ordenado.iloc[2]['nick'], f"{ranking_ordenado.iloc[2][col_score]} pts")
 
         st.markdown("---")
 
-        ranking_final = processar_ranking_completo(
-            ranking_ordenado,
-            col_score
-        )
+        # Processa a tabela final com formatação
+        ranking_final = processar_ranking_completo(ranking_ordenado, col_score)
 
         def highlight_zones(row):
             if row['Classificação'] == "Elite Zone":
@@ -154,6 +148,7 @@ if not df_bruto.empty:
             hide_index=True
         )
 
+    # --- TABELA 1: PRO ---
     with tab1:
         f_pro = (
             (df_bruto['kr'] * 40)
@@ -162,6 +157,7 @@ if not df_bruto.empty:
         )
         renderizar_ranking(df_bruto.copy(), 'Score_Pro', f_pro)
 
+    # --- TABELA 2: TEAM ---
     with tab2:
         f_team = (
             ((df_bruto['vitorias'] / df_bruto['partidas']) * 100 * 10)
@@ -170,6 +166,7 @@ if not df_bruto.empty:
         )
         renderizar_ranking(df_bruto.copy(), 'Score_Team', f_team)
 
+    # --- TABELA 3: ELITE ---
     with tab3:
         f_elite = (
             (df_bruto['kr'] * 50)
@@ -185,4 +182,4 @@ if not df_bruto.empty:
     )
 
 else:
-    st.info("Banco conectado. Aguardando inserção de dados na tabela 'ranking_squad'.")
+    st.info("Aguardando inserção de dados na tabela 'ranking_squad' ou verificando conexão...")
