@@ -43,7 +43,7 @@ def get_data():
         return pd.DataFrame()
 
 # =============================
-# FUNÇÃO PARA ATUALIZAR RANKING
+# FUNÇÃO PARA ATUALIZAR RANKING (sem ON CONFLICT)
 # =============================
 def atualizar_ranking():
     st.info("Atualizando ranking automaticamente...")
@@ -62,7 +62,7 @@ def atualizar_ranking():
 
     for nick in player_list:
         try:
-            # chamada à API usando o método que você já tem
+            # chamada à API
             url = f"https://api.pubg.com/shards/steam/players?filter[playerNames]={nick}"
             headers = {
                 "Authorization": f"Bearer {api_key}",
@@ -71,7 +71,6 @@ def atualizar_ranking():
             resp = requests.get(url, headers=headers)
             if resp.status_code == 200:
                 data = resp.json()
-                # processar os dados do player como no pubg_import.py
                 stats = {
                     "nick": nick,
                     "partidas": data.get('data', [{}])[0].get('stats', {}).get('matches', 0),
@@ -84,28 +83,43 @@ def atualizar_ranking():
                     "kill_dist_max": data.get('data', [{}])[0].get('stats', {}).get('longestKill', 0),
                     "dano_medio": data.get('data', [{}])[0].get('stats', {}).get('damageDealt', 0)
                 }
-                # atualizar o banco, mantendo a lógica de pubg_import.py
+
+                # 1️⃣ Tenta atualizar primeiro
                 conn.query(
                     """
-                    INSERT INTO ranking_squad (nick, partidas, kr, vitorias, kills, assists, headshots, revives, kill_dist_max, dano_medio)
-                    VALUES (:nick, :partidas, :kr, :vitorias, :kills, :assists, :headshots, :revives, :kill_dist_max, :dano_medio)
-                    ON CONFLICT (nick) DO UPDATE SET
-                        partidas = EXCLUDED.partidas,
-                        kr = EXCLUDED.kr,
-                        vitorias = EXCLUDED.vitorias,
-                        kills = EXCLUDED.kills,
-                        assists = EXCLUDED.assists,
-                        headshots = EXCLUDED.headshots,
-                        revives = EXCLUDED.revives,
-                        kill_dist_max = EXCLUDED.kill_dist_max,
-                        dano_medio = EXCLUDED.dano_medio
+                    UPDATE ranking_squad
+                    SET partidas = :partidas,
+                        kr = :kr,
+                        vitorias = :vitorias,
+                        kills = :kills,
+                        assists = :assists,
+                        headshots = :headshots,
+                        revives = :revives,
+                        kill_dist_max = :kill_dist_max,
+                        dano_medio = :dano_medio
+                    WHERE nick = :nick
                     """,
                     params=stats
                 )
+
+                # 2️⃣ Se não existia, insere
+                conn.query(
+                    """
+                    INSERT INTO ranking_squad (nick, partidas, kr, vitorias, kills, assists, headshots, revives, kill_dist_max, dano_medio)
+                    SELECT :nick, :partidas, :kr, :vitorias, :kills, :assists, :headshots, :revives, :kill_dist_max, :dano_medio
+                    WHERE NOT EXISTS (
+                        SELECT 1 FROM ranking_squad WHERE nick = :nick
+                    )
+                    """,
+                    params=stats
+                )
+
             else:
                 st.warning(f"Falha ao buscar dados de {nick}: {resp.status_code}")
-            # Mantém taxa de requests original do seu código
-            time.sleep(1)  # 1 segundo entre requests (ajuste conforme seu pubg_import.py)
+
+            # Mantém taxa de requests original
+            time.sleep(1)
+
         except Exception as e:
             st.warning(f"Erro ao atualizar {nick}: {e}")
 
@@ -155,7 +169,6 @@ def processar_ranking_completo(df_ranking, col_score):
 # =============================
 # INTERFACE
 # =============================
-# Atualiza ranking se necessário
 if precisa_atualizar():
     atualizar_ranking()
 
