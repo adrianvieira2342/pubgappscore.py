@@ -15,8 +15,9 @@ st.set_page_config(
 # =============================
 # CONFIGURAÇÃO SUPABASE
 # =============================
-SUPABASE_URL = st.secrets["SUPABASE_URL"]
-SUPABASE_KEY = st.secrets["SUPABASE_KEY"]
+# Usando os secrets que você já tem
+SUPABASE_URL = st.secrets["DATABASE_URL"]  # URL do banco PostgreSQL
+SUPABASE_KEY = st.secrets["PUBG_API_KEY"]  # Chave da API PUBG
 sb = create_client(SUPABASE_URL, SUPABASE_KEY)
 
 # =============================
@@ -51,19 +52,19 @@ def registrar_atualizacao():
 def atualizar_ranking():
     # =================================
     # Coloque aqui a lógica do seu pubg_import.py
-    # Exemplo: buscar dados da API PUBG e atualizar a tabela ranking_squad
+    # Exemplo: buscar dados da API PUBG usando a PUBG_API_KEY
     # =================================
     st.info("Atualizando ranking automaticamente...")
-    
+
     # Exemplo mínimo:
-    # df_api = buscar_api_pubg()
+    # df_api = buscar_api_pubg(st.secrets["PUBG_API_KEY"])
     # atualizar_banco(df_api)
-    
+
     # Depois de atualizar, registra a hora
     registrar_atualizacao()
 
 # =============================
-# CONEXÃO COM BANCO (SUPABASE / PostgreSQL)
+# CONEXÃO COM BANCO (POSTGRES)
 # =============================
 def get_data():
     try:
