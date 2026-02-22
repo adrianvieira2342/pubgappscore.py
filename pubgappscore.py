@@ -14,7 +14,7 @@ st.set_page_config(
 )
 
 # =============================
-# VARIÁVEL GLOBAL PARA CONTROLE DE TEMPO
+# CONTROLE DE TEMPO DE ATUALIZAÇÃO
 # =============================
 if 'ultima_atualizacao_memoria' not in st.session_state:
     st.session_state['ultima_atualizacao_memoria'] = datetime.min
@@ -43,14 +43,13 @@ def get_data():
         return pd.DataFrame()
 
 # =============================
-# FUNÇÃO PARA ATUALIZAR RANKING (sem ON CONFLICT)
+# ATUALIZAÇÃO DO RANKING
 # =============================
 def atualizar_ranking():
     st.info("Atualizando ranking automaticamente...")
 
     api_key = st.secrets["PUBG_API_KEY"]
 
-    # pegar nicks existentes no banco
     df_nicks = get_data()
     if df_nicks.empty:
         st.info("Nenhum nick encontrado para atualizar.")
@@ -62,7 +61,6 @@ def atualizar_ranking():
 
     for nick in player_list:
         try:
-            # chamada à API
             url = f"https://api.pubg.com/shards/steam/players?filter[playerNames]={nick}"
             headers = {
                 "Authorization": f"Bearer {api_key}",
@@ -84,8 +82,8 @@ def atualizar_ranking():
                     "dano_medio": data.get('data', [{}])[0].get('stats', {}).get('damageDealt', 0)
                 }
 
-                # 1️⃣ Tenta atualizar primeiro
-                conn.query(
+                # UPDATE primeiro
+                conn.execute(
                     """
                     UPDATE ranking_squad
                     SET partidas = :partidas,
@@ -102,8 +100,8 @@ def atualizar_ranking():
                     params=stats
                 )
 
-                # 2️⃣ Se não existia, insere
-                conn.query(
+                # INSERT se não existir
+                conn.execute(
                     """
                     INSERT INTO ranking_squad (nick, partidas, kr, vitorias, kills, assists, headshots, revives, kill_dist_max, dano_medio)
                     SELECT :nick, :partidas, :kr, :vitorias, :kills, :assists, :headshots, :revives, :kill_dist_max, :dano_medio
@@ -167,7 +165,7 @@ def processar_ranking_completo(df_ranking, col_score):
     return df_ranking[cols_base + [col_score]]
 
 # =============================
-# INTERFACE
+# EXECUÇÃO
 # =============================
 if precisa_atualizar():
     atualizar_ranking()
