@@ -1,17 +1,19 @@
 import os
 import time
 import requests
-import mysql.connector
-from dotenv import load_dotenv
+import psycopg2
+import streamlit as st
 
-# 1. CARREGAR VARIÁVEIS
-load_dotenv()
-
-API_KEY = os.getenv("PUBG_API_KEY")
-DB_HOST = os.getenv("DB_HOST")
-DB_USER = os.getenv("DB_USER")
-DB_PASS = os.getenv("DB_PASSWORD")
-DB_NAME = os.getenv("DB_NAME")
+# ==========================================
+# 1. CONFIGURAÇÕES E ACESSO ÀS SECRETS
+# ==========================================
+# O Streamlit Cloud lê automaticamente as Secrets
+try:
+    API_KEY = st.secrets["PUBG_API_KEY"]
+    DATABASE_URL = st.secrets["DATABASE_URL"]
+except KeyError as e:
+    st.error(f"Erro: A chave {e} não foi encontrada nas Secrets do Streamlit.")
+    st.stop()
 
 BASE_URL = "https://api.pubg.com/shards/steam"
 headers = {
@@ -19,6 +21,7 @@ headers = {
     "Accept": "application/vnd.api+json"
 }
 
+# Lista de Jogadores
 players_list = [
     "Adrian-Wan", "MironoteuCool", "FabioEspeto", "Mamutag_Komander",
     "Robson_Foz", "MEIRAA", "EL-LOCORJ", "SalaminhoKBD",
@@ -26,54 +29,66 @@ players_list = [
     "Sidors", "Takato_Matsuki", "cmm01", "Petrala", "Fumiga_BR"
 ]
 
-# =========================
-# CONEXÃO BANCO DE DADOS
-# =========================
+# ==========================================
+# 2. CONEXÃO COM O BANCO (POSTGRESQL)
+# ==========================================
 try:
-    conn = mysql.connector.connect(
-        host=DB_HOST, user=DB_USER, password=DB_PASS, database=DB_NAME
-    )
+    conn = psycopg2.connect(DATABASE_URL)
     cursor = conn.cursor()
-    print("Conexão estabelecida com sucesso.")
-except mysql.connector.Error as e:
-    print(f"Erro ao conectar: {e}")
-    exit()
+    st.success("Conectado ao Supabase com sucesso!")
+except Exception as e:
+    st.error(f"Erro na conexão com o banco de dados: {e}")
+    st.stop()
 
 def fazer_requisicao(url):
+    """Função para lidar com o limite de 10 requests por minuto"""
     for tentativa in range(3):
         res = requests.get(url, headers=headers)
         if res.status_code == 429:
-            print(" ! [Rate Limit] Aguardando 30s...")
+            st.warning("API em Rate Limit. Aguardando 30 segundos...")
             time.sleep(30)
             continue
         return res
     return None
 
-# =========================
-# 1. BUSCAR TEMPORADA E IDs (EM LOTE)
-# =========================
-print("Detectando temporada atual...")
-res_season = fazer_requisicao(f"{BASE_URL}/seasons")
-current_season_id = next(s["id"] for s in res_season.json()["data"] if s["attributes"]["isCurrentSeason"])
+# ==========================================
+# 3. BUSCAR TEMPORADA ATUAL E IDs EM LOTE
+# ==========================================
+st.write("Verificando temporada e IDs dos jogadores...")
 
-print(f"Buscando IDs de {len(players_list)} jogadores em uma única chamada...")
+# Busca Temporada
+res_season = fazer_requisicao(f"{BASE_URL}/seasons")
+if res_season and res_season.status_code == 200:
+    seasons = res_season.json()["data"]
+    current_season_id = next(s["id"] for s in seasons if s["attributes"]["isCurrentSeason"])
+else:
+    st.error("Falha ao obter temporada atual.")
+    st.stop()
+
+# Busca IDs (Batching para economizar requests)
 nicks_str = ",".join(players_list)
 res_p = fazer_requisicao(f"{BASE_URL}/players?filter[playerNames]={nicks_str}")
 
-if not res_p or res_p.status_code != 200:
-    print("Erro ao buscar IDs dos jogadores.")
-    exit()
+if res_p and res_p.status_code == 200:
+    player_map = {p["attributes"]["name"]: p["id"] for p in res_p.json()["data"]}
+else:
+    st.error("Falha ao mapear IDs dos jogadores.")
+    st.stop()
 
-# Criamos um dicionário { "Nick": "ID_da_API" }
-player_map = {p["attributes"]["name"]: p["id"] for p in res_p.json()["data"]}
+# ==========================================
+# 4. PROCESSAMENTO E UPSERT (RANKING)
+# ==========================================
+st.info(f"Iniciando atualização de {len(player_map)} jogadores...")
 
-# =========================
-# 2. PROCESSAR E ATUALIZAR (UPSERT)
-# =========================
-for nick, p_id in player_map.items():
-    print(f"\nAtualizando estatísticas: {nick}")
+progress_bar = st.progress(0)
+status_text = st.empty()
+
+for i, (nick, p_id) in enumerate(player_map.items()):
+    status_text.text(f"Processando: {nick} ({i+1}/{len(player_map)})")
     
-    res_s = fazer_requisicao(f"{BASE_URL}/players/{p_id}/seasons/{current_season_id}")
+    # Busca estatísticas da temporada para o jogador
+    url_stats = f"{BASE_URL}/players/{p_id}/seasons/{current_season_id}"
+    res_s = fazer_requisicao(url_stats)
     
     if res_s and res_s.status_code == 200:
         all_stats = res_s.json()["data"]["attributes"]["gameModeStats"]
@@ -81,7 +96,7 @@ for nick, p_id in player_map.items():
         partidas = stats.get("roundsPlayed", 0)
 
         if partidas > 0:
-            # Recuperando todos os seus dados originais
+            # Coleta de dados brutos
             kills = stats.get("kills", 0)
             vitorias = stats.get("wins", 0)
             assists = stats.get("assists", 0)
@@ -90,7 +105,7 @@ for nick, p_id in player_map.items():
             dano_total = stats.get("damageDealt", 0)
             dist_max = stats.get("longestKill", 0.0)
 
-            # Suas fórmulas de cálculo
+            # Fórmulas de cálculo
             kr = round(kills / partidas, 2)
             dano_medio = int(dano_total / partidas)
             win_rate = (vitorias / partidas) * 100
@@ -103,30 +118,35 @@ for nick, p_id in player_map.items():
                 (hs_pg * 15) + (assists_pg * 10) + (revives_pg * 5)
             , 2)
 
-            # SQL COM UPSERT (Evita apagar a tabela toda)
+            # SQL UPSERT para PostgreSQL (Supabase)
+            # EXCLUDED refere-se aos novos dados que estamos tentando inserir
             sql = """
             INSERT INTO ranking_squad 
             (nick, partidas, kr, vitorias, kills, dano_medio, assists, headshots, revives, kill_dist_max, score) 
             VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
-            ON DUPLICATE KEY UPDATE 
-            partidas=%s, kr=%s, vitorias=%s, kills=%s, dano_medio=%s, 
-            assists=%s, headshots=%s, revives=%s, kill_dist_max=%s, score=%s
+            ON CONFLICT (nick) DO UPDATE SET 
+            partidas = EXCLUDED.partidas,
+            kr = EXCLUDED.kr,
+            vitorias = EXCLUDED.vitorias,
+            kills = EXCLUDED.kills,
+            dano_medio = EXCLUDED.dano_medio,
+            assists = EXCLUDED.assists,
+            headshots = EXCLUDED.headshots,
+            revives = EXCLUDED.revives,
+            kill_dist_max = EXCLUDED.kill_dist_max,
+            score = EXCLUDED.score;
             """
             
-            valores = (
-                nick, partidas, kr, vitorias, kills, dano_medio, assists, headshots, revives, dist_max, score, # Dados para o Insert
-                partidas, kr, vitorias, kills, dano_medio, assists, headshots, revives, dist_max, score        # Dados para o Update
-            )
-            
+            valores = (nick, partidas, kr, vitorias, kills, dano_medio, assists, headshots, revives, dist_max, score)
             cursor.execute(sql, valores)
             conn.commit()
-            print(f" > [OK] Score: {score}")
-        else:
-            print(f" > {nick} sem partidas nesta season.")
     
-    # Pausa de 6 segundos para manter os 10 RPM da API gratuita
+    # Atualiza progresso na tela
+    progress_bar.progress((i + 1) / len(player_map))
+    
+    # Pausa obrigatória de 6 segundos para não ser banido pelo Rate Limit (10 RPM)
     time.sleep(6)
 
-print("\n--- PROCESSO CONCLUÍDO ---")
+st.success("✅ Atualização concluída com sucesso!")
 cursor.close()
 conn.close()
