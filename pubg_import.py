@@ -4,13 +4,10 @@ import psycopg2
 import time
 from datetime import datetime
 
-# ==========================
-# CONFIGURAÇÕES E AMBIENTE
-# ==========================
 DATABASE_URL = os.environ.get("DATABASE_URL")
 PUBG_API_KEY = os.environ.get("PUBG_API_KEY")
-SEASON_ID = "division.bro.official.pc-40"
 REGION = "steam"
+SEASON_ID = "division.bro.official.pc-40" 
 
 players = {
     "Adrian-Wan": "account.58beb24ada7346408942d42dc64c7901",
@@ -32,60 +29,52 @@ players = {
     "Fumiga_BR": "account.1fa2a7c08c3e4d4786587b4575a071cb",
 }
 
-def atualizar_ranking():
-    try:
-        conn = psycopg2.connect(DATABASE_URL)
-        cursor = conn.cursor()
-        headers = {"Authorization": f"Bearer {PUBG_API_KEY}", "Accept": "application/vnd.api+json"}
+def get_stats():
+    conn = psycopg2.connect(DATABASE_URL)
+    cursor = conn.cursor()
+    headers = {"Authorization": f"Bearer {PUBG_API_KEY}", "Accept": "application/vnd.api+json"}
 
-        for nick, player_id in players.items():
-            print(f"🔎 Buscando {nick}...")
-            url = f"https://api.pubg.com/shards/{REGION}/players/{player_id}/seasons/{SEASON_ID}"
-            
-            # Pausa obrigatória de 6 segundos entre cada player para evitar o erro 429 (limite de 10 por minuto)
-            time.sleep(6) 
-            
-            res = requests.get(url, headers=headers)
-            
-            if res.status_code != 200:
-                print(f"❌ Erro {res.status_code} em {nick}")
-                continue
+    for nick, p_id in players.items():
+        # Delay de 6s para evitar Erro 429
+        time.sleep(6) 
+        
+        url = f"https://api.pubg.com/shards/{REGION}/players/{p_id}/seasons/{SEASON_ID}"
+        res = requests.get(url, headers=headers)
+        
+        if res.status_code != 200:
+            print(f"❌ Erro {res.status_code} em {nick}")
+            continue
 
-            data = res.json()
-            try:
-                # Tenta buscar Squad TPP Normal
-                stats = data["data"]["attributes"]["gameModeStats"].get("squad", {})
-                
-                wins = stats.get("wins", 0)
-                kills = stats.get("kills", 0)
-                damage = stats.get("damageDealt", 0)
-                
-                # Para o ranking não ficar com score 0, vamos usar Kills ou uma soma de performance
-                # Se quiser manter o 'score' no banco, vamos usar o Damage ou Kills como base:
-                score_fake = kills  
+        data = res.json()
+        all_modes = data["data"]["attributes"]["gameModeStats"]
 
-                print(f"📊 {nick} -> Wins: {wins} | Kills: {kills} | Damage: {int(damage)}")
+        # Tenta Squad TPP, se estiver zerado tenta Squad FPP
+        stats = all_modes.get("squad", {})
+        if stats.get("roundsPlayed", 0) == 0:
+            stats = all_modes.get("squad-fpp", {})
 
-                cursor.execute("""
-                    INSERT INTO ranking_squad (nick, vitorias, score, atualizado_em)
-                    VALUES (%s, %s, %s, %s)
-                    ON CONFLICT (nick)
-                    DO UPDATE SET
-                        vitorias = EXCLUDED.vitorias,
-                        score = EXCLUDED.score,
-                        atualizado_em = EXCLUDED.atualizado_em
-                """, (nick, wins, score_fake, datetime.utcnow()))
-                
-                conn.commit()
+        wins = stats.get("wins", 0)
+        kills = stats.get("kills", 0)
+        # Se 'rankPoints' for 0 (comum no normal), usamos kills para o score
+        score = stats.get("rankPoints", 0)
+        if score == 0:
+            score = kills
 
-            except KeyError:
-                print(f"⚠️ {nick} sem dados nesta temporada.")
+        print(f"📊 {nick} -> Wins: {wins}, Score/Kills: {score} (Partidas: {stats.get('roundsPlayed', 0)})")
 
-        cursor.close()
-        conn.close()
+        cursor.execute("""
+            INSERT INTO ranking_squad (nick, vitorias, score, atualizado_em)
+            VALUES (%s, %s, %s, %s)
+            ON CONFLICT (nick)
+            DO UPDATE SET
+                vitorias = EXCLUDED.vitorias,
+                score = EXCLUDED.score,
+                atualizado_em = EXCLUDED.atualizado_em
+        """, (nick, wins, score, datetime.utcnow()))
+        conn.commit()
 
-    except Exception as e:
-        print(f"💥 Erro: {e}")
+    cursor.close()
+    conn.close()
 
 if __name__ == "__main__":
-    atualizar_ranking()
+    get_stats()
