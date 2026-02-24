@@ -95,8 +95,7 @@ for nick, player_id in players.items():
     points = squad.get("currentRankPoint", 0)
     wins = squad.get("wins", 0)
 
-print(f"📊 Gravando {nick}: Score={points}, Wins={wins}") # Adicione esta linha
-    cursor.execute(""" ... """)
+    print(f"📊 Gravando {nick}: Score={points}, Wins={wins}") # Adicione esta linha
     
     cursor.execute("""
     INSERT INTO ranking_squad (
