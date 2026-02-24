@@ -1,12 +1,12 @@
 import os
 import requests
 import psycopg2
+import time
 from datetime import datetime
 
 # ==========================
 # VARIÁVEIS DE AMBIENTE
 # ==========================
-
 DATABASE_URL = os.environ.get("DATABASE_URL")
 PUBG_API_KEY = os.environ.get("PUBG_API_KEY")
 
@@ -19,21 +19,12 @@ if not PUBG_API_KEY:
 # ==========================
 # CONEXÃO BANCO
 # ==========================
-
 conn = psycopg2.connect(DATABASE_URL)
 cursor = conn.cursor()
-
-# 🔎 DEBUG CONEXÃO
-cursor.execute("SELECT current_database();")
-print("🗄️ Banco conectado:", cursor.fetchone())
-
-cursor.execute("SELECT current_schema();")
-print("📂 Schema:", cursor.fetchone())
 
 # ==========================
 # JOGADORES
 # ==========================
-
 players = {
     "Adrian-Wan": "account.58beb24ada7346408942d42dc64c7901",
     "MironoteuCool": "account.24b0600cbba342eab1546ae2881f50fa",
@@ -57,31 +48,32 @@ players = {
 # ==========================
 # CONFIG PUBG
 # ==========================
-
 REGION = "steam"
-SEASON_ID = "division.bro.official.pc-40"  # Atualizado para a Temporada 40
+SEASON_ID = "division.bro.official.pc-40" # Atualizado para Temporada 40
 
 headers = {
     "Authorization": f"Bearer {PUBG_API_KEY}",
     "Accept": "application/vnd.api+json"
 }
 
-print("🚀 Iniciando atualização...")
+print(f"🚀 Iniciando atualização da temporada: {SEASON_ID}")
 
 # ==========================
 # LOOP PRINCIPAL
 # ==========================
-
 for nick, player_id in players.items():
 
-    print(f"🔎 Atualizando {nick}")
-
+    print(f"🔎 Buscando dados de {nick}...")
     url = f"https://api.pubg.com/shards/{REGION}/players/{player_id}/seasons/{SEASON_ID}/ranked"
 
     response = requests.get(url, headers=headers)
 
     if response.status_code != 200:
         print(f"❌ Erro API {nick}: {response.status_code}")
+        # Se for erro de limite, espera mais tempo
+        if response.status_code == 429:
+            print("⏳ Limite atingido. Esperando 10 segundos...")
+            time.sleep(10)
         continue
 
     data = response.json()
@@ -89,38 +81,41 @@ for nick, player_id in players.items():
     try:
         squad = data["data"]["attributes"]["rankedGameModeStats"]["squad"]
     except KeyError:
-        print(f"⚠️ {nick} sem dados squad")
+        print(f"⚠️ {nick} sem dados squad nesta temporada.")
         continue
 
     points = squad.get("currentRankPoint", 0)
     wins = squad.get("wins", 0)
 
-    print(f"📊 Gravando {nick}: Score={points}, Wins={wins}") # Adicione esta linha
-    
-    cursor.execute("""
-    INSERT INTO ranking_squad (
-        nick,
-        vitorias,
-        score,
-        atualizado_em
-    )
-    VALUES (%s, %s, %s, %s)
-    ON CONFLICT (nick)
-    DO UPDATE SET
-        vitorias = EXCLUDED.vitorias,
-        score = EXCLUDED.score,
-        atualizado_em = EXCLUDED.atualizado_em
-""", (
-    nick,
-    wins,
-    points,
-    datetime.utcnow()
-))
+    # Log de depuração para o GitHub Actions
+    print(f"📊 Gravando {nick}: Score={points}, Wins={wins}")
 
-# Commit único no final
-conn.commit()
+    cursor.execute("""
+        INSERT INTO ranking_squad (
+            nick,
+            vitorias,
+            score,
+            atualizado_em
+        )
+        VALUES (%s, %s, %s, %s)
+        ON CONFLICT (nick)
+        DO UPDATE SET
+            vitorias = EXCLUDED.vitorias,
+            score = EXCLUDED.score,
+            atualizado_em = EXCLUDED.atualizado_em
+    """, (
+        nick,
+        wins,
+        points,
+        datetime.utcnow()
+    ))
+    
+    # Commit imediato para garantir a gravação
+    conn.commit()
+    
+    # Pequena pausa para evitar Erro 429 da API
+    time.sleep(2)
 
 cursor.close()
 conn.close()
-
 print("✅ Atualização finalizada com sucesso!")
