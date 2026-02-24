@@ -5,19 +5,13 @@ import time
 from datetime import datetime
 
 # ==========================
-# VARIÁVEIS DE AMBIENTE
+# CONFIGURAÇÕES E AMBIENTE
 # ==========================
 DATABASE_URL = os.environ.get("DATABASE_URL")
 PUBG_API_KEY = os.environ.get("PUBG_API_KEY")
-
-if not DATABASE_URL or not PUBG_API_KEY:
-    raise Exception("Verifique se DATABASE_URL e PUBG_API_KEY estão nos Secrets do GitHub")
-
-# ==========================
-# CONFIGURAÇÕES PUBG
-# ==========================
+SEASON_ID = "division.bro.official.pc-40"
 REGION = "steam"
-SEASON_ID = "division.bro.official.pc-40"  # Temporada Atual
+
 players = {
     "Adrian-Wan": "account.58beb24ada7346408942d42dc64c7901",
     "MironoteuCool": "account.24b0600cbba342eab1546ae2881f50fa",
@@ -38,65 +32,60 @@ players = {
     "Fumiga_BR": "account.1fa2a7c08c3e4d4786587b4575a071cb",
 }
 
-headers = {
-    "Authorization": f"Bearer {PUBG_API_KEY}",
-    "Accept": "application/vnd.api+json"
-}
+def atualizar_ranking():
+    try:
+        conn = psycopg2.connect(DATABASE_URL)
+        cursor = conn.cursor()
+        headers = {"Authorization": f"Bearer {PUBG_API_KEY}", "Accept": "application/vnd.api+json"}
 
-# ==========================
-# EXECUÇÃO PRINCIPAL
-# ==========================
-try:
-    conn = psycopg2.connect(DATABASE_URL)
-    cursor = conn.cursor()
-    print(f"🚀 Iniciando busca: Squad Normal TPP - Temporada {SEASON_ID}")
+        for nick, player_id in players.items():
+            print(f"🔎 Buscando {nick}...")
+            url = f"https://api.pubg.com/shards/{REGION}/players/{player_id}/seasons/{SEASON_ID}"
+            
+            # Pausa obrigatória de 6 segundos entre cada player para evitar o erro 429 (limite de 10 por minuto)
+            time.sleep(6) 
+            
+            res = requests.get(url, headers=headers)
+            
+            if res.status_code != 200:
+                print(f"❌ Erro {res.status_code} em {nick}")
+                continue
 
-    for nick, player_id in players.items():
-        # URL SEM o sufixo /ranked para buscar o modo Normal
-        url = f"https://api.pubg.com/shards/{REGION}/players/{player_id}/seasons/{SEASON_ID}"
-        
-        response = requests.get(url, headers=headers)
+            data = res.json()
+            try:
+                # Tenta buscar Squad TPP Normal
+                stats = data["data"]["attributes"]["gameModeStats"].get("squad", {})
+                
+                wins = stats.get("wins", 0)
+                kills = stats.get("kills", 0)
+                damage = stats.get("damageDealt", 0)
+                
+                # Para o ranking não ficar com score 0, vamos usar Kills ou uma soma de performance
+                # Se quiser manter o 'score' no banco, vamos usar o Damage ou Kills como base:
+                score_fake = kills  
 
-        if response.status_code == 429:
-            print(f"⏳ Limite atingido em {nick}. Esperando 15 segundos...")
-            time.sleep(15)
-            response = requests.get(url, headers=headers) # Tenta de novo
+                print(f"📊 {nick} -> Wins: {wins} | Kills: {kills} | Damage: {int(damage)}")
 
-        if response.status_code != 200:
-            print(f"❌ Erro {response.status_code} para {nick}")
-            continue
+                cursor.execute("""
+                    INSERT INTO ranking_squad (nick, vitorias, score, atualizado_em)
+                    VALUES (%s, %s, %s, %s)
+                    ON CONFLICT (nick)
+                    DO UPDATE SET
+                        vitorias = EXCLUDED.vitorias,
+                        score = EXCLUDED.score,
+                        atualizado_em = EXCLUDED.atualizado_em
+                """, (nick, wins, score_fake, datetime.utcnow()))
+                
+                conn.commit()
 
-        data = response.json()
+            except KeyError:
+                print(f"⚠️ {nick} sem dados nesta temporada.")
 
-        try:
-            # Estrutura para Modo Normal (gameModeStats em vez de rankedGameModeStats)
-            stats = data["data"]["attributes"]["gameModeStats"]["squad"]
-            wins = stats.get("wins", 0)
-            # No modo normal não há 'Rank Point', usamos 'wins' ou 'roundsPlayed' para compor o score
-            # Se preferir usar o sistema de pontos da API, verifique se 'rankPoints' está disponível
-            points = stats.get("rankPoints", 0) 
-        except KeyError:
-            print(f"⚠️ {nick} sem dados de Squad TPP nesta temporada.")
-            continue
+        cursor.close()
+        conn.close()
 
-        print(f"📊 Gravando {nick}: Score={points}, Wins={wins}")
+    except Exception as e:
+        print(f"💥 Erro: {e}")
 
-        cursor.execute("""
-            INSERT INTO ranking_squad (nick, vitorias, score, atualizado_em)
-            VALUES (%s, %s, %s, %s)
-            ON CONFLICT (nick)
-            DO UPDATE SET
-                vitorias = EXCLUDED.vitorias,
-                score = EXCLUDED.score,
-                atualizado_em = EXCLUDED.atualizado_em
-        """, (nick, wins, points, datetime.utcnow()))
-        
-        conn.commit()
-        time.sleep(3) # Intervalo para evitar bloqueio
-
-    cursor.close()
-    conn.close()
-    print("✅ Processo concluído com sucesso!")
-
-except Exception as e:
-    print(f"💥 Erro fatal: {e}")
+if __name__ == "__main__":
+    atualizar_ranking()
