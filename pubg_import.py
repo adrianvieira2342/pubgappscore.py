@@ -64,7 +64,13 @@ print(f"🚀 Iniciando atualização da temporada: {SEASON_ID}")
 for nick, player_id in players.items():
 
     print(f"🔎 Buscando dados de {nick}...")
-    url = f"https://api.pubg.com/shards/{REGION}/players/{player_id}/seasons/{SEASON_ID}"
+    res_s = fazer_requisicao(f"{BASE_URL}/players/{p_id}/seasons/{current_season_id}")
+    
+    if res_s and res_s.status_code == 200:
+    all_stats = res_s.json()["data"]["attributes"]["gameModeStats"]
+    stats = all_stats.get("squad", {})
+
+    partidas = stats.get("roundsPlayed", 0)
 
     response = requests.get(url, headers=headers)
 
