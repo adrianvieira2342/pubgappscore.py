@@ -3,6 +3,10 @@ import requests
 import psycopg2
 from datetime import datetime
 
+# ==========================
+# VARIÁVEIS DE AMBIENTE
+# ==========================
+
 DATABASE_URL = os.environ.get("DATABASE_URL")
 PUBG_API_KEY = os.environ.get("PUBG_API_KEY")
 
@@ -12,8 +16,16 @@ if not DATABASE_URL:
 if not PUBG_API_KEY:
     raise Exception("PUBG_API_KEY não definida")
 
+# ==========================
+# CONEXÃO BANCO
+# ==========================
+
 conn = psycopg2.connect(DATABASE_URL)
 cursor = conn.cursor()
+
+# ==========================
+# JOGADORES
+# ==========================
 
 players = {
     "Adrian-Wan": "account.58beb24ada7346408942d42dc64c7901",
@@ -35,6 +47,10 @@ players = {
     "Fumiga_BR": "account.1fa2a7c08c3e4d4786587b4575a071cb",
 }
 
+# ==========================
+# CONFIG PUBG
+# ==========================
+
 REGION = "steam"
 SEASON_ID = "division.bro.official.pc-2018-01"
 
@@ -43,24 +59,30 @@ headers = {
     "Accept": "application/vnd.api+json"
 }
 
+print("🚀 Iniciando atualização...")
+
+# ==========================
+# LOOP PRINCIPAL
+# ==========================
+
 for nick, player_id in players.items():
 
-    print(f"Atualizando {nick}")
+    print(f"🔎 Atualizando {nick}")
 
     url = f"https://api.pubg.com/shards/{REGION}/players/{player_id}/seasons/{SEASON_ID}/ranked"
 
     response = requests.get(url, headers=headers)
 
     if response.status_code != 200:
-        print("Erro API:", response.status_code)
+        print(f"❌ Erro API {nick}: {response.status_code}")
         continue
 
     data = response.json()
 
     try:
         squad = data["data"]["attributes"]["rankedGameModeStats"]["squad"]
-    except:
-        print("Sem dados squad")
+    except KeyError:
+        print(f"⚠️ {nick} sem dados squad")
         continue
 
     points = squad.get("currentRankPoint", 0)
@@ -71,6 +93,7 @@ for nick, player_id in players.items():
         VALUES (%s, %s, %s, %s, %s)
         ON CONFLICT (id)
         DO UPDATE SET
+            name = EXCLUDED.name,
             rank = EXCLUDED.rank,
             points = EXCLUDED.points,
             updated_at = EXCLUDED.updated_at
@@ -82,9 +105,10 @@ for nick, player_id in players.items():
         datetime.utcnow()
     ))
 
-    conn.commit()
+# Commit único no final
+conn.commit()
 
 cursor.close()
 conn.close()
 
-print("Atualização concluída.")
+print("✅ Atualização finalizada com sucesso!")
