@@ -29,6 +29,6 @@ jobs:
       - name: Executar atualização
         env:
           DATABASE_URL: ${{ secrets.DATABASE_URL }}
-          PUBG_API_KEY: ${{ secrets.SECRET_API }}
+          PUBG_API_KEY: ${{ secrets.PUBG_API_KEY }}
         run: python pubg_import.py
         
