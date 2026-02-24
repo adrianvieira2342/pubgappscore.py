@@ -19,7 +19,12 @@ jobs:
           python-version: '3.11'
 
       - name: Install dependencies
-        run: pip install -r requirements.txt
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+
+      - name: Debug - listar arquivos
+        run: ls -la
 
       - name: Executar atualização
         run: python pubg_import.py
