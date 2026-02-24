@@ -59,7 +59,7 @@ players = {
 # ==========================
 
 REGION = "steam"
-SEASON_ID = "division.bro.official.pc-2018-01"
+SEASON_ID = "division.bro.official.pc-40"  # Atualizado para a Temporada 40
 
 headers = {
     "Authorization": f"Bearer {PUBG_API_KEY}",
