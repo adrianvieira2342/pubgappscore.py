@@ -1,71 +1,62 @@
-import streamlit as st
-import pandas as pd
-import psycopg2
-from psycopg2 import OperationalError
-import datetime
+import requests
+import time
 
-# 1. Configuração da página
-st.set_page_config(page_title="PUBG Ranking Squad", layout="wide")
+# 1. Sua API Key e Lista de Jogadores
+API_KEY = "eyJ0eXAiOiJKV1QiLCJhbGciOiJIUzI1NiJ9.eyJqdGkiOiIxMTNkNWFkMC1lYzVhLTAxM2UtNWY0NC02NjA2MjJjNmQwYmIiLCJpc3MiOiJnYW1lbG9ja2VyIiwiaWF0IjoxNzcxMTMyMDEzLCJwdWIiOiJibHVlaG9sZSIsInRpdGxlIjoicHViZyIsImFwcCI6Ii0xY2NmM2YzMC1jYmRlLTQxMzctODM2Yy05ODY3ZDAxOWUwZDEifQ.kjXG3IJlpYJF0ybz9i7VCtGAGgBjCqds_qQuHsyhyu4"
 
-# --- FUNÇÕES DE DADOS ---
+jogadores = [
+    "Adrian-Wan", "MironoteuCool", "FabioEspeto", "Mamutag_Komander",
+    "Robson_Foz", "MEIRAA", "EL-LOCORJ", "SalaminhoKBD",
+    "nelio_ponto_dev", "CARNEIROOO", "Kowalski_PR", "Zacouteguy",
+    "Sidors", "Takato_Matsuki", "cmm01", "Petrala", "Fumiga_BR"
+]
 
-@st.cache_data(ttl=300)
-def carregar_ranking():
-    try:
-        conn = psycopg2.connect(st.secrets["DATABASE_URL"], connect_timeout=5)
-        # Adicionei um parâmetro aleatório comentado na query para evitar cache do próprio banco
-        query = f"SELECT * FROM ranking_squad ORDER BY score DESC -- {datetime.datetime.now()}"
-        df = pd.read_sql(query, conn)
-        conn.close()
-        return df
-    except Exception as e:
-        st.error(f"Erro ao ler banco de dados: {e}")
-        return None
-
-def rodar_script_atualizacao():
-    """
-    Aqui você deve colar ou chamar a função que vai na API do PUBG 
-    e faz o 'INSERT' ou 'UPDATE' no seu banco de dados.
-    """
-    try:
-        # EXEMPLO DE LOGICA (Substitua pela sua chamada real da API se necessário)
-        # conn = psycopg2.connect(st.secrets["DATABASE_URL"])
-        # cursor = conn.cursor()
-        # ... logica da API aqui ...
-        # conn.commit()
-        # conn.close()
-        
-        # Se o seu script de sincronização for um arquivo separado chamado 'sync.py':
-        # import sync
-        # sync.main() 
-        
-        return True
-    except Exception as e:
-        st.error(f"Falha ao sincronizar com a API do PUBG: {e}")
-        return False
-
-# --- INTERFACE ---
-
-st.title("🏆 Ranking Squad PUBG")
-
-# Botão de ação dupla: Atualiza a API e depois limpa o Cache
-if st.button('🔄 Sincronizar com API e Atualizar Tabela'):
-    with st.spinner('Comunicando com a API do PUBG...'):
-        sucesso = rodar_script_atualizacao() # 1. Tenta atualizar o banco
-        if sucesso:
-            st.cache_data.clear()            # 2. Limpa o cache do Streamlit
-            st.toast("Dados atualizados com sucesso!")
-            st.rerun()                       # 3. Recarrega a tela
-
-df_ranking = carregar_ranking()
-
-# --- EXIBIÇÃO ---
-if df_ranking is not None and not df_ranking.empty:
-    # Mostra a data do dado mais recente para você conferir
-    ultima_att = df_ranking['atualizado_em'].max()
-    st.caption(f"Última atualização detectada no banco: {ultima_att}")
+def buscar_todos_os_ids(lista_nicks, api_key):
+    plataforma = "steam" # Altere para 'psn' ou 'xbox' se necessário
+    headers = {
+        "Authorization": f"Bearer {api_key}",
+        "Accept": "application/vnd.api+json"
+    }
     
-    # ... (Restante do seu código de colunas, dataframe e gráfico) ...
-    st.dataframe(df_ranking, use_container_width=True)
-else:
-    st.warning("Nenhum dado encontrado.")
+    mapa_ids = {}
+    
+    # Dividir a lista em grupos de 10 (limite da API do PUBG)
+    for i in range(0, len(lista_nicks), 10):
+        grupo = lista_nicks[i:i+10]
+        nicks_string = ",".join(grupo)
+        
+        url = f"https://api.pubg.com/shards/{plataforma}/players?filter[playerNames]={nicks_string}"
+        
+        print(f"Buscando grupo: {grupo}...")
+        response = requests.get(url, headers=headers)
+        
+        if response.status_code == 200:
+            dados = response.json()
+            for player in dados['data']:
+                nick = player['attributes']['name']
+                id_conta = player['id']
+                mapa_ids[nick] = id_conta
+        elif response.status_code == 429:
+            print("Erro: Limite de requisições atingido. Aguardando 10 segundos...")
+            time.sleep(10)
+        else:
+            print(f"Erro ao buscar nicks {grupo}: {response.status_code}")
+            print(response.text)
+            
+    return mapa_ids
+
+# --- EXECUÇÃO ---
+resultados = buscar_todos_os_ids(jogadores, API_KEY)
+
+print("\n" + "="*30)
+print("IDs ENCONTRADOS:")
+print("="*30)
+for nick, id_conta in resultados.items():
+    print(f"'{nick}': '{id_conta}',")
+print("="*30)
+
+# Verificação de quem faltou (caso o nick esteja escrito errado)
+faltantes = set(jogadores) - set(resultados.keys())
+if faltantes:
+    print(f"\n⚠️ Não foi possível encontrar IDs para: {faltantes}")
+    print("Verifique se o Nick está digitado exatamente como no jogo.")
