@@ -10,21 +10,14 @@ from datetime import datetime
 DATABASE_URL = os.environ.get("DATABASE_URL")
 PUBG_API_KEY = os.environ.get("PUBG_API_KEY")
 
-if not DATABASE_URL:
-    raise Exception("DATABASE_URL não definida")
-
-if not PUBG_API_KEY:
-    raise Exception("PUBG_API_KEY não definida")
+if not DATABASE_URL or not PUBG_API_KEY:
+    raise Exception("Verifique se DATABASE_URL e PUBG_API_KEY estão nos Secrets do GitHub")
 
 # ==========================
-# CONEXÃO BANCO
+# CONFIGURAÇÕES PUBG
 # ==========================
-conn = psycopg2.connect(DATABASE_URL)
-cursor = conn.cursor()
-
-# ==========================
-# JOGADORES
-# ==========================
+REGION = "steam"
+SEASON_ID = "division.bro.official.pc-40"  # Temporada Atual
 players = {
     "Adrian-Wan": "account.58beb24ada7346408942d42dc64c7901",
     "MironoteuCool": "account.24b0600cbba342eab1546ae2881f50fa",
@@ -45,83 +38,65 @@ players = {
     "Fumiga_BR": "account.1fa2a7c08c3e4d4786587b4575a071cb",
 }
 
-# ==========================
-# CONFIG PUBG
-# ==========================
-REGION = "steam"
-SEASON_ID = "division.bro.official.pc-40" # Atualizado para Temporada 40
-
 headers = {
     "Authorization": f"Bearer {PUBG_API_KEY}",
     "Accept": "application/vnd.api+json"
 }
 
-print(f"🚀 Iniciando atualização da temporada: {SEASON_ID}")
-
 # ==========================
-# LOOP PRINCIPAL
+# EXECUÇÃO PRINCIPAL
 # ==========================
-for nick, player_id in players.items():
+try:
+    conn = psycopg2.connect(DATABASE_URL)
+    cursor = conn.cursor()
+    print(f"🚀 Iniciando busca: Squad Normal TPP - Temporada {SEASON_ID}")
 
-    print(f"🔎 Buscando dados de {nick}...")
-    res_s = fazer_requisicao(f"{BASE_URL}/players/{p_id}/seasons/{current_season_id}")
-    
-    if res_s and res_s.status_code == 200:
-    all_stats = res_s.json()["data"]["attributes"]["gameModeStats"]
-    stats = all_stats.get("squad", {})
+    for nick, player_id in players.items():
+        # URL SEM o sufixo /ranked para buscar o modo Normal
+        url = f"https://api.pubg.com/shards/{REGION}/players/{player_id}/seasons/{SEASON_ID}"
+        
+        response = requests.get(url, headers=headers)
 
-    partidas = stats.get("roundsPlayed", 0)
-
-    response = requests.get(url, headers=headers)
-
-    if response.status_code != 200:
-        print(f"❌ Erro API {nick}: {response.status_code}")
-        # Se for erro de limite, espera mais tempo
         if response.status_code == 429:
-            print("⏳ Limite atingido. Esperando 10 segundos...")
-            time.sleep(10)
-        continue
+            print(f"⏳ Limite atingido em {nick}. Esperando 15 segundos...")
+            time.sleep(15)
+            response = requests.get(url, headers=headers) # Tenta de novo
 
-    data = response.json()
+        if response.status_code != 200:
+            print(f"❌ Erro {response.status_code} para {nick}")
+            continue
 
-    try:
-        squad = data["data"]["attributes"]["rankedGameModeStats"]["squad"]
-    except KeyError:
-        print(f"⚠️ {nick} sem dados squad nesta temporada.")
-        continue
+        data = response.json()
 
-    points = squad.get("currentRankPoint", 0)
-    wins = squad.get("wins", 0)
+        try:
+            # Estrutura para Modo Normal (gameModeStats em vez de rankedGameModeStats)
+            stats = data["data"]["attributes"]["gameModeStats"]["squad"]
+            wins = stats.get("wins", 0)
+            # No modo normal não há 'Rank Point', usamos 'wins' ou 'roundsPlayed' para compor o score
+            # Se preferir usar o sistema de pontos da API, verifique se 'rankPoints' está disponível
+            points = stats.get("rankPoints", 0) 
+        except KeyError:
+            print(f"⚠️ {nick} sem dados de Squad TPP nesta temporada.")
+            continue
 
-    # Log de depuração para o GitHub Actions
-    print(f"📊 Gravando {nick}: Score={points}, Wins={wins}")
+        print(f"📊 Gravando {nick}: Score={points}, Wins={wins}")
 
-    cursor.execute("""
-        INSERT INTO ranking_squad (
-            nick,
-            vitorias,
-            score,
-            atualizado_em
-        )
-        VALUES (%s, %s, %s, %s)
-        ON CONFLICT (nick)
-        DO UPDATE SET
-            vitorias = EXCLUDED.vitorias,
-            score = EXCLUDED.score,
-            atualizado_em = EXCLUDED.atualizado_em
-    """, (
-        nick,
-        wins,
-        points,
-        datetime.utcnow()
-    ))
-    
-    # Commit imediato para garantir a gravação
-    conn.commit()
-    
-    # Pequena pausa para evitar Erro 429 da API
-    time.sleep(2)
+        cursor.execute("""
+            INSERT INTO ranking_squad (nick, vitorias, score, atualizado_em)
+            VALUES (%s, %s, %s, %s)
+            ON CONFLICT (nick)
+            DO UPDATE SET
+                vitorias = EXCLUDED.vitorias,
+                score = EXCLUDED.score,
+                atualizado_em = EXCLUDED.atualizado_em
+        """, (nick, wins, points, datetime.utcnow()))
+        
+        conn.commit()
+        time.sleep(3) # Intervalo para evitar bloqueio
 
-cursor.close()
-conn.close()
-print("✅ Atualização finalizada com sucesso!")
+    cursor.close()
+    conn.close()
+    print("✅ Processo concluído com sucesso!")
+
+except Exception as e:
+    print(f"💥 Erro fatal: {e}")
