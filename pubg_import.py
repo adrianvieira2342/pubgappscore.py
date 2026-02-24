@@ -1,11 +1,7 @@
 import os
 import requests
+import psycopg2
 from datetime import datetime
-from supabase import create_client
-
-# ==========================
-# CONFIGURAÇÕES
-# ==========================
 
 DATABASE_URL = os.environ.get("DATABASE_URL")
 PUBG_API_KEY = os.environ.get("PUBG_API_KEY")
@@ -16,11 +12,8 @@ if not DATABASE_URL:
 if not PUBG_API_KEY:
     raise Exception("PUBG_API_KEY não definida")
 
-supabase = create_client(DATABASE_URL, DATABASE_URL)
-
-# ==========================
-# LISTA DE JOGADORES
-# ==========================
+conn = psycopg2.connect(DATABASE_URL)
+cursor = conn.cursor()
 
 players = {
     "Adrian-Wan": "account.58beb24ada7346408942d42dc64c7901",
@@ -42,10 +35,6 @@ players = {
     "Fumiga_BR": "account.1fa2a7c08c3e4d4786587b4575a071cb",
 }
 
-# ==========================
-# CONFIG PUBG
-# ==========================
-
 REGION = "steam"
 SEASON_ID = "division.bro.official.pc-2018-01"
 
@@ -54,45 +43,48 @@ headers = {
     "Accept": "application/vnd.api+json"
 }
 
-print("🚀 Iniciando atualização de todos os jogadores...")
-
-# ==========================
-# LOOP PRINCIPAL
-# ==========================
-
 for nick, player_id in players.items():
 
-    print(f"\n🔎 Buscando dados de {nick}")
+    print(f"Atualizando {nick}")
 
     url = f"https://api.pubg.com/shards/{REGION}/players/{player_id}/seasons/{SEASON_ID}/ranked"
 
     response = requests.get(url, headers=headers)
 
     if response.status_code != 200:
-        print(f"❌ Erro ao buscar {nick}: {response.status_code}")
+        print("Erro API:", response.status_code)
         continue
 
     data = response.json()
 
     try:
-        squad_stats = data["data"]["attributes"]["rankedGameModeStats"]["squad"]
-    except KeyError:
-        print(f"⚠️ {nick} sem dados de squad")
+        squad = data["data"]["attributes"]["rankedGameModeStats"]["squad"]
+    except:
+        print("Sem dados squad")
         continue
 
-    points = squad_stats.get("currentRankPoint", 0)
-    wins = squad_stats.get("wins", 0)
+    points = squad.get("currentRankPoint", 0)
+    wins = squad.get("wins", 0)
 
-    print(f"📊 {nick} | Points: {points} | Wins: {wins}")
+    cursor.execute("""
+        INSERT INTO ranking (id, name, rank, points, updated_at)
+        VALUES (%s, %s, %s, %s, %s)
+        ON CONFLICT (id)
+        DO UPDATE SET
+            rank = EXCLUDED.rank,
+            points = EXCLUDED.points,
+            updated_at = EXCLUDED.updated_at
+    """, (
+        player_id,
+        nick,
+        wins,
+        points,
+        datetime.utcnow()
+    ))
 
-    registro = {
-        "id": player_id,
-        "name": nick,
-        "rank": wins,
-        "points": points,
-        "updated_at": datetime.utcnow().isoformat()
-    }
+    conn.commit()
 
-    supabase.table("ranking").upsert(registro).execute()
+cursor.close()
+conn.close()
 
-print("\n✅ Atualização finalizada com sucesso!")
+print("Atualização concluída.")
