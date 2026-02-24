@@ -64,7 +64,7 @@ print(f"🚀 Iniciando atualização da temporada: {SEASON_ID}")
 for nick, player_id in players.items():
 
     print(f"🔎 Buscando dados de {nick}...")
-    url = f"https://api.pubg.com/shards/{REGION}/players/{player_id}/seasons/{SEASON_ID}/ranked"
+    url = f"https://api.pubg.com/shards/{REGION}/players/{player_id}/seasons/{SEASON_ID}"
 
     response = requests.get(url, headers=headers)
 
