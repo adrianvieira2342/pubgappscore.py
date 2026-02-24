@@ -23,6 +23,13 @@ if not PUBG_API_KEY:
 conn = psycopg2.connect(DATABASE_URL)
 cursor = conn.cursor()
 
+# 🔎 DEBUG CONEXÃO
+cursor.execute("SELECT current_database();")
+print("🗄️ Banco conectado:", cursor.fetchone())
+
+cursor.execute("SELECT current_schema();")
+print("📂 Schema:", cursor.fetchone())
+
 # ==========================
 # JOGADORES
 # ==========================
