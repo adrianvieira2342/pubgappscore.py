@@ -89,21 +89,24 @@ for nick, player_id in players.items():
     wins = squad.get("wins", 0)
 
     cursor.execute("""
-        INSERT INTO ranking (id, name, rank, points, updated_at)
-        VALUES (%s, %s, %s, %s, %s)
-        ON CONFLICT (id)
-        DO UPDATE SET
-            name = EXCLUDED.name,
-            rank = EXCLUDED.rank,
-            points = EXCLUDED.points,
-            updated_at = EXCLUDED.updated_at
-    """, (
-        player_id,
+    INSERT INTO ranking_squad (
         nick,
-        wins,
-        points,
-        datetime.utcnow()
-    ))
+        vitorias,
+        score,
+        atualizado_em
+    )
+    VALUES (%s, %s, %s, %s)
+    ON CONFLICT (nick)
+    DO UPDATE SET
+        vitorias = EXCLUDED.vitorias,
+        score = EXCLUDED.score,
+        atualizado_em = EXCLUDED.atualizado_em
+""", (
+    nick,
+    wins,
+    points,
+    datetime.utcnow()
+))
 
 # Commit único no final
 conn.commit()
