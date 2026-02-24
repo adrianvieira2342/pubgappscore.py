@@ -27,4 +27,4 @@ jobs:
           DATABASE_URL: ${{ secrets.DATABASE_URL }}
           PUBG_API_KEY: ${{ secrets.PUBG_API_KEY }}
         run: |
-          python pubg_import.py
+          python pubgappscore.py
