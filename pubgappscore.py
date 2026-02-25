@@ -1,30 +1,43 @@
-import os
+# =============================
+# INTERFACE (Trecho atualizado)
+# =============================
+st.markdown("# 🎮 Ranking Squad - Season 40")
+st.markdown("---")
 
-print("====================================")
-print("🚀 INICIANDO TESTE DE VARIÁVEIS")
-print("====================================\n")
+df_bruto = get_data()
 
-print("🔎 Listando todas variáveis de ambiente disponíveis:\n")
+if not df_bruto.empty:
+    df_bruto['partidas'] = df_bruto['partidas'].replace(0, 1)
 
-for key, value in os.environ.items():
-    print(f"{key} = {value}")
+    # Adicionando a quarta aba na lista
+    tab1, tab2, tab3, tab4 = st.tabs([
+        "🔥 PRO (Equilibrado)", 
+        "🤝 TEAM (Suporte)", 
+        "🎯 ELITE (Skill)",
+        "📊 GERAL (Métricas)"
+    ])
 
-print("\n====================================")
-print("🔎 TESTE ESPECÍFICO DAS VARIÁVEIS")
-print("====================================\n")
+    # ... (mantenha a função renderizar_ranking e as tabs 1, 2 e 3 como estão)
 
-database_url = os.environ.get("DATABASE_URL")
-pubg_api_key = os.environ.get("PUBG_API_KEY")
+    # =============================
+    # NOVA ABA: GERAL (Métricas)
+    # =============================
+    with tab4:
+        st.subheader("Estatísticas Brutas da Temporada")
+        st.info("Nesta aba os jogadores são listados por maior número de abates (Kills) sem fórmulas de score.")
+        
+        # Ordenação simples por Kills
+        df_geral = df_bruto.sort_values(by='kills', ascending=False).reset_index(drop=True)
+        
+        # Aplicando a mesma formatação visual de zonas
+        ranking_geral = processar_ranking_completo(df_geral, 'kills') # Usamos kills como coluna de referência
 
-print("DATABASE_URL encontrada?:", database_url is not None)
-print("PUBG_API_KEY encontrada?:", pubg_api_key is not None)
-
-print("\nValor DATABASE_URL:")
-print(database_url)
-
-print("\nValor PUBG_API_KEY:")
-print(pubg_api_key)
-
-print("\n====================================")
-print("✅ FIM DO TESTE")
-print("====================================")
+        st.dataframe(
+            ranking_geral.style
+            .background_gradient(cmap='Greens', subset=['kills'])
+            .apply(highlight_zones, axis=1)
+            .format(precision=2),
+            use_container_width=True,
+            height=650,
+            hide_index=True
+        )
