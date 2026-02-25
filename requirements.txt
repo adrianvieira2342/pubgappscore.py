@@ -9,3 +9,4 @@ streamlit-autorefresh
 requests
 mysql-connector-python
 python-dotenv
+pytz
