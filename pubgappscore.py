@@ -109,11 +109,11 @@ if not df_bruto.empty:
     
     df_bruto['partidas_calc'] = df_bruto['partidas'].replace(0, 1)
 
-    tab1, tab2, tab3, tab4 = st.tabs([
+    # Removida a quarta aba da lista
+    tab1, tab2, tab3 = st.tabs([
         "🔥 PRO (Equilibrado)", 
         "🤝 TEAM (Suporte)", 
-        "🎯 ELITE (Skill)",
-        "📊 GERAL (Métricas)"
+        "🎯 ELITE (Skill)"
     ])
 
     def highlight_zones(row):
@@ -164,21 +164,6 @@ if not df_bruto.empty:
     with tab3:
         f_elite = (df_bruto['kr'] * 50) + ((df_bruto['headshots'] / df_bruto['partidas_calc']) * 60) + (df_bruto['dano_medio'] / 5)
         renderizar_ranking(df_bruto.copy(), 'Score_Elite', f_elite)
-
-    with tab4:
-        st.subheader("📊 Métricas Brutas (Ordenado por Kills)")
-        ranking_geral = processar_ranking_completo(df_bruto.copy(), 'kills')
-
-        altura_dinamica = (len(ranking_geral) * 35) + 80
-
-        st.dataframe(
-            ranking_geral.style
-            .apply(highlight_zones, axis=1)
-            .background_gradient(cmap='Greens', subset=['kills']),
-            use_container_width=True,
-            height=altura_dinamica,
-            hide_index=True
-        )
 
     st.markdown("---")
     st.markdown("<div style='text-align: center; color: gray; padding: 20px;'>📊 <b>By Adriano Vieira</b></div>", unsafe_allow_html=True)
