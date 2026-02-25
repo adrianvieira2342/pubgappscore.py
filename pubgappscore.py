@@ -52,20 +52,30 @@ st.markdown("""
 # FUNÇÃO DO CRONÔMETRO (BR)
 # =============================
 def exibir_timer_atualizacao():
-    try:
-        fuso = pytz.timezone(FUSO_HORARIO)
-        agora = datetime.now(fuso)
-        
-        # Sincroniza com os minutos 00, 10, 20, 30, 40, 50 do relógio
-        minutos_faltando = (INTERVALO_WORKFLOW - 1) - (agora.minute % INTERVALO_WORKFLOW)
-        segundos_faltando = 59 - agora.second
-        
-        st.markdown(
-            f"<div class='timer-text'>⏳ Próxima janela de atualização do banco em: <b>{minutos_faltando:02d}:{segundos_faltando:02d}</b></div>", 
-            unsafe_allow_html=True
-        )
-    except Exception:
-        st.markdown("<div class='timer-text'>⏳ Sincronizando cronômetro...</div>", unsafe_allow_html=True)
+    # Pega a hora UTC (padrão dos servidores)
+    agora_utc = datetime.now(pytz.utc)
+    # Converte explicitamente para o fuso de São Paulo
+    fuso_br = pytz.timezone('America/Sao_Paulo')
+    agora_br = agora_utc.astimezone(fuso_br)
+    
+    # Debug opcional: descomente a linha abaixo para ver se a hora no site bate com seu relógio
+    # st.write(f"Hora detectada no site: {agora_br.strftime('%H:%M:%S')}")
+
+    # Cálculo do ciclo de 10 minutos
+    minuto_atual = agora_br.minute
+    segundo_atual = agora_br.second
+    
+    # Descobre quantos minutos faltam para o próximo múltiplo de 10 (ex: :10, :20...)
+    proxima_janela = ((minuto_atual // 10) + 1) * 10
+    if proxima_janela == 60: proxima_janela = 0
+    
+    faltam_minutos = (proxima_janela - minuto_atual - 1) % 10
+    faltam_segundos = 59 - segundo_atual
+    
+    st.markdown(
+        f"<div class='timer-text'>⏳ Próxima janela de atualização do banco em: <b>{faltam_minutos:02d}:{faltam_segundos:02d}</b></div>", 
+        unsafe_allow_html=True
+    )
 
 # =============================
 # CONEXÃO COM BANCO
