@@ -107,63 +107,69 @@ if not df_bruto.empty:
     for col in cols_inteiras:
         df_bruto[col] = pd.to_numeric(df_bruto[col], errors='coerce').fillna(0).astype(int)
     
-    df_bruto['partidas_calc'] = df_bruto['partidas'].replace(0, 1)
+    # --- AJUSTE SOLICITADO: Filtra apenas jogadores com 1 ou mais partidas ---
+    df_bruto = df_bruto[df_bruto['partidas'] > 0].copy()
+    
+    # Se após o filtro o DF ficar vazio, exibe aviso
+    if df_bruto.empty:
+        st.info("Nenhum jogador possui partidas registradas nesta temporada.")
+    else:
+        df_bruto['partidas_calc'] = df_bruto['partidas'].replace(0, 1)
 
-    # Removida a quarta aba da lista
-    tab1, tab2, tab3 = st.tabs([
-        "🔥 PRO (Equilibrado)", 
-        "🤝 TEAM (Suporte)", 
-        "🎯 ELITE (Skill)"
-    ])
+        tab1, tab2, tab3 = st.tabs([
+            "🔥 PRO (Equilibrado)", 
+            "🤝 TEAM (Suporte)", 
+            "🎯 ELITE (Skill)"
+        ])
 
-    def highlight_zones(row):
-        if row['Classificação'] == "Elite Zone":
-            return ['background-color: #003300; color: white; font-weight: bold'] * len(row)
-        if row['Classificação'] == "Cocô Zone":
-            return ['background-color: #4d0000; color: white; font-weight: bold'] * len(row)
-        return [''] * len(row)
+        def highlight_zones(row):
+            if row['Classificação'] == "Elite Zone":
+                return ['background-color: #003300; color: white; font-weight: bold'] * len(row)
+            if row['Classificação'] == "Cocô Zone":
+                return ['background-color: #4d0000; color: white; font-weight: bold'] * len(row)
+            return [''] * len(row)
 
-    def renderizar_ranking(df_local, col_score, formula):
-        df_local[col_score] = formula.round(2)
-        ranking_final = processar_ranking_completo(df_local, col_score)
+        def renderizar_ranking(df_local, col_score, formula):
+            df_local[col_score] = formula.round(2)
+            ranking_final = processar_ranking_completo(df_local, col_score)
 
-        top1, top2, top3 = st.columns(3)
-        with top1:
-            st.metric("🥇 1º Lugar", ranking_final.iloc[0]['nick'], f"{ranking_final.iloc[0][col_score]} pts")
-        with top2:
-            st.metric("🥈 2º Lugar", ranking_final.iloc[1]['nick'], f"{ranking_final.iloc[1][col_score]} pts")
-        with top3:
-            st.metric("🥉 3º Lugar", ranking_final.iloc[2]['nick'], f"{ranking_final.iloc[2][col_score]} pts")
+            top1, top2, top3 = st.columns(3)
+            with top1:
+                st.metric("🥇 1º Lugar", ranking_final.iloc[0]['nick'] if len(ranking_final) > 0 else "-", f"{ranking_final.iloc[0][col_score] if len(ranking_final) > 0 else 0} pts")
+            with top2:
+                st.metric("🥈 2º Lugar", ranking_final.iloc[1]['nick'] if len(ranking_final) > 1 else "-", f"{ranking_final.iloc[1][col_score] if len(ranking_final) > 1 else 0} pts")
+            with top3:
+                st.metric("🥉 3º Lugar", ranking_final.iloc[2]['nick'] if len(ranking_final) > 2 else "-", f"{ranking_final.iloc[2][col_score] if len(ranking_final) > 2 else 0} pts")
 
-        format_dict = {
-            'kr': "{:.2f}", 'kill_dist_max': "{:.2f}", col_score: "{:.2f}",
-            'partidas': "{:d}", 'vitorias': "{:d}", 'kills': "{:d}", 
-            'assists': "{:d}", 'headshots': "{:d}", 'revives': "{:d}", 'dano_medio': "{:d}"
-        }
+            format_dict = {
+                'kr': "{:.2f}", 'kill_dist_max': "{:.2f}", col_score: "{:.2f}",
+                'partidas': "{:d}", 'vitorias': "{:d}", 'kills': "{:d}", 
+                'assists': "{:d}", 'headshots': "{:d}", 'revives': "{:d}", 'dano_medio': "{:d}"
+            }
 
-        altura_dinamica = (len(ranking_final) * 35) + 80
+            altura_dinamica = (len(ranking_final) * 35) + 80
 
-        st.dataframe(
-            ranking_final.style
-            .background_gradient(cmap='YlGnBu', subset=[col_score])
-            .apply(highlight_zones, axis=1)
-            .format(format_dict),
-            use_container_width=True,
-            height=altura_dinamica,
-            hide_index=True
-        )
+            st.dataframe(
+                ranking_final.style
+                .background_gradient(cmap='YlGnBu', subset=[col_score])
+                .apply(highlight_zones, axis=1)
+                .format(format_dict),
+                use_container_width=True,
+                height=altura_dinamica,
+                hide_index=True
+            )
 
-    with tab1:
-        f_pro = (df_bruto['kr'] * 40) + (df_bruto['dano_medio'] / 8) + ((df_bruto['vitorias'] / df_bruto['partidas_calc']) * 500)
-        renderizar_ranking(df_bruto.copy(), 'Score_Pro', f_pro)
+        with tab1:
+            f_pro = (df_bruto['kr'] * 40) + (df_bruto['dano_medio'] / 8) + ((df_bruto['vitorias'] / df_bruto['partidas_calc']) * 500)
+            renderizar_ranking(df_bruto.copy(), 'Score_Pro', f_pro)
 
-    with tab2:
-        f_team = ((df_bruto['vitorias'] / df_bruto['partidas_calc']) * 1000) + ((df_bruto['revives'] / df_bruto['partidas_calc']) * 50) + ((df_bruto['assists'] / df_bruto['partidas_calc']) * 35)
-        renderizar_ranking(df_bruto.copy(), 'Score_Team', f_team)
+        with tab2:
+            f_team = ((df_bruto['vitorias'] / df_bruto['partidas_calc']) * 1000) + ((df_bruto['revives'] / df_bruto['partidas_calc']) * 50) + ((df_bruto['assists'] / df_bruto['partidas_calc']) * 35)
+            renderizar_ranking(df_bruto.copy(), 'Score_Team', f_team)
 
-    with tab3:
-        f_elite = (df_bruto['kr'] * 50) + ((df_bruto['headshots'] / df_bruto['partidas_calc']) * 60) + (df_bruto['dano_medio'] / 5)
-        renderizar_ranking(df_bruto.copy(), 'Score_Elite', f_elite)
+        with tab3:
+            f_elite = (df_bruto['kr'] * 50) + ((df_bruto['headshots'] / df_bruto['partidas_calc']) * 60) + (df_bruto['dano_medio'] / 5)
+            renderizar_ranking(df_bruto.copy(), 'Score_Elite', f_elite)
 
     st.markdown("---")
     st.markdown("<div style='text-align: center; color: gray; padding: 20px;'>📊 <b>By Adriano Vieira</b></div>", unsafe_allow_html=True)
