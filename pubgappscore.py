@@ -57,6 +57,7 @@ def get_data():
             type="sql",
             url=st.secrets["DATABASE_URL"]
         )
+        # Buscamos todos os dados
         query = "SELECT * FROM ranking_squad"
         df = conn.query(query, ttl=0)
         return df
@@ -64,16 +65,29 @@ def get_data():
         st.error(f"Erro na conexão com o banco: {e}")
         return pd.DataFrame()
 
-def formatar_data_br(df):
-    """Converte o horário do sistema para Brasília e retorna formatado"""
+def obter_horario_atualizacao_real(df):
+    """Extrai o horário mais recente da coluna de data do banco de dados"""
     try:
-        # Se você tiver uma coluna de timestamp no banco, use ela, 
-        # caso contrário, usamos o horário da leitura atual
-        fuso_br = pytz.timezone('America/Sao_Paulo')
-        agora_br = datetime.now(pytz.utc).astimezone(fuso_br)
-        return agora_br.strftime("%d/%m/%Y %H:%M:%S")
-    except:
-        return "Horário indisponível"
+        # Tenta encontrar a coluna de data (ajuste o nome se for diferente de 'updated_at' ou 'data_hora')
+        colunas_data = [c for c in df.columns if 'date' in c.lower() or 'time' in c.lower() or 'data' in c.lower() or 'update' in c.lower()]
+        
+        if colunas_data:
+            col_data = colunas_data[0]
+            # Converte para datetime caso esteja como string
+            ult_dt = pd.to_datetime(df[col_data]).max()
+            
+            # Converte de UTC (banco) para Brasília
+            fuso_br = pytz.timezone('America/Sao_Paulo')
+            
+            if ult_dt.tzinfo is None:
+                ult_dt = pytz.utc.localize(ult_dt)
+            
+            ult_dt_br = ult_dt.astimezone(fuso_br)
+            return ult_dt_br.strftime("%d/%m/%Y %H:%M:%S")
+        else:
+            return "Coluna de data não encontrada no banco"
+    except Exception as e:
+        return f"Erro ao processar data: {e}"
 
 # =============================
 # PROCESSAMENTO DO RANKING
@@ -125,21 +139,23 @@ st.markdown("<h1 style='text-align:center;'>🎮 Ranking Squad - Season 40</h1>"
 df_bruto = get_data()
 
 if not df_bruto.empty:
-    # Exibe o Badge de sincronização com horário de Brasília
-    data_formatada = formatar_data_br(df_bruto)
+    # --- AJUSTE: Agora busca a data real gravada nas linhas do banco ---
+    data_atualizacao_db = obter_horario_atualizacao_real(df_bruto)
+    
     st.markdown(f"""
         <div style='text-align: center;'>
             <div class='status-badge'>
-                ● Banco Sincronizado (Brasília): {data_formatada}
+                ● Última Carga no Banco (Brasília): {data_atualizacao_db}
             </div>
         </div>
     """, unsafe_allow_html=True)
 
+    # Conversão de tipos
     cols_inteiras = ['partidas', 'vitorias', 'kills', 'assists', 'headshots', 'revives', 'dano_medio']
     for col in cols_inteiras:
         df_bruto[col] = pd.to_numeric(df_bruto[col], errors='coerce').fillna(0).astype(int)
     
-    # Filtro de segurança para jogadores sem partidas
+    # Filtro de jogadores ativos
     df_bruto = df_bruto[df_bruto['partidas'] > 0].copy()
     
     if df_bruto.empty:
