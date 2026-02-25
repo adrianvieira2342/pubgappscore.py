@@ -1,98 +1,144 @@
 import os
+import time
 import requests
 import psycopg2
-import time
 from datetime import datetime
 
 # ==========================
-# CONFIGURAÇÕES E AMBIENTE
+# 1. CONFIGURAÇÕES E AMBIENTE
 # ==========================
 DATABASE_URL = os.environ.get("DATABASE_URL")
-PUBG_API_KEY = os.environ.get("PUBG_API_KEY")
-REGION = "steam"
+API_KEY = os.environ.get("PUBG_API_KEY")
+BASE_URL = "https://api.pubg.com/shards/steam"
 
-# Alterado para 'lifetime' para garantir que os dados não venham zerados
-SEASON_ID = "lifetime" 
-
-players = {
-    "Adrian-Wan": "account.58beb24ada7346408942d42dc64c7901",
-    "MironoteuCool": "account.24b0600cbba342eab1546ae2881f50fa",
-    "FabioEspeto": "account.d8ccad228a4a417dad9921616d6c6bcd",
-    "Mamutag_Komander": "account.64c62d76cce74d0b99857a27975e350e",
-    "Robson_Foz": "account.8142e6d837254ee1bca954b719692f38",
-    "MEIRAA": "account.c3f37890e7534978abadaf4bae051390",
-    "EL-LOCORJ": "account.94ab932726fc4c64a03eb9797429baa3",
-    "SalaminhoKBD": "account.de093e200d3441a9b781a9717a017dd3",
-    "nelio_ponto_dev": "account.ad39c88ddf754d33a3dfeadc117c47df",
-    "CARNEIROOO": "account.8c0313f2148d47b7bffcde634f094445",
-    "Kowalski_PR": "account.b25200afe120424a839eb56dd2bc49cb",
-    "Zacouteguy": "account.a742bf1d5725467c91140cd0ed83c265",
-    "Sidors": "account.60ab21fad4094824a32dc404420b914d",
-    "Takato_Matsuki": "account.10d2403139bd4066a95dda1a3eefe1e8",
-    "cmm01": "account.80cedebb935242469fdd177454a52e0e",
-    "Petrala": "account.aadd1c378ff841219d853b4ad2646286",
-    "Fumiga_BR": "account.1fa2a7c08c3e4d4786587b4575a071cb",
+headers = {
+    "Authorization": f"Bearer {API_KEY}",
+    "Accept": "application/vnd.api+json"
 }
 
-def get_stats():
-    try:
-        # Conexão com o Supabase via DATABASE_URL
-        conn = psycopg2.connect(DATABASE_URL)
-        cursor = conn.cursor()
-        headers = {
-            "Authorization": f"Bearer {PUBG_API_KEY}", 
-            "Accept": "application/vnd.api+json"
-        }
+players = [
+    "Adrian-Wan", "MironoteuCool", "FabioEspeto", "Mamutag_Komander",
+    "Robson_Foz", "MEIRAA", "EL-LOCORJ", "SalaminhoKBD",
+    "nelio_ponto_dev", "CARNEIROOO", "Kowalski_PR", "Zacouteguy",
+    "Sidors", "Takato_Matsuki", "cmm01", "Petrala", "Fumiga_BR"
+]
 
-        print(f"🚀 Iniciando busca em modo: {SEASON_ID}")
+def fazer_requisicao(url):
+    for tentativa in range(3):
+        res = requests.get(url, headers=headers)
+        if res.status_code == 429:
+            print(" ! [Rate Limit] API ocupada. Aguardando 30 segundos...")
+            time.sleep(30)
+            continue
+        return res
+    return None
 
-        for nick, p_id in players.items():
-            # Delay de 6 segundos para respeitar o limite de 10 requisições/minuto da API
-            time.sleep(6) 
-            
-            # URL específica para o modo lifetime (Squad Normal)
-            url = f"https://api.pubg.com/shards/{REGION}/players/{p_id}/seasons/lifetime"
-            res = requests.get(url, headers=headers)
-            
-            if res.status_code != 200:
-                print(f"❌ Erro {res.status_code} em {nick}")
-                continue
+# ==========================
+# 2. DETECTAR TEMPORADA ATUAL
+# ==========================
+print("🚀 Detectando temporada atual...")
+res_season = fazer_requisicao(f"{BASE_URL}/seasons")
+current_season_id = ""
 
-            data = res.json()
-            all_modes = data["data"]["attributes"]["gameModeStats"]
+if res_season and res_season.status_code == 200:
+    for s in res_season.json()["data"]:
+        if s["attributes"]["isCurrentSeason"]:
+            current_season_id = s["id"]
+            break
+else:
+    print("❌ Erro crítico: Não foi possível obter a temporada.")
+    exit()
 
-            # Busca dados de Squad TPP, se estiver zerado tenta Squad FPP
-            stats = all_modes.get("squad", {})
-            if stats.get("roundsPlayed", 0) == 0:
-                stats = all_modes.get("squad-fpp", {})
+print(f"✅ Temporada Ativa: {current_season_id}")
 
-            wins = stats.get("wins", 0)
-            kills = stats.get("kills", 0)
-            
-            # Como o modo Normal não tem RankPoints, usamos Kills para popular a coluna 'score'
-            score = kills 
+# ==========================
+# 3. PROCESSAR JOGADORES
+# ==========================
+try:
+    conn = psycopg2.connect(DATABASE_URL)
+    cursor = conn.cursor()
 
-            print(f"📊 {nick} -> Wins: {wins}, Kills: {kills} (Partidas Totais: {stats.get('roundsPlayed', 0)})")
+    for i, player in enumerate(players, 1):
+        print(f"\n[{i}/{len(players)}] Analisando: {player}")
+        
+        # Busca o ID do jogador pelo Nick
+        res_p = fazer_requisicao(f"{BASE_URL}/players?filter[playerNames]={player}")
+        
+        if not res_p or res_p.status_code != 200:
+            print(f" > Pulando {player}: Falha na API")
+            continue
 
-            # Comando para inserir ou atualizar baseado no NICK
-            cursor.execute("""
-                INSERT INTO ranking_squad (nick, vitorias, score, atualizado_em)
-                VALUES (%s, %s, %s, %s)
-                ON CONFLICT (nick)
-                DO UPDATE SET
+        p_data = res_p.json()
+        if not p_data.get("data"):
+            continue
+
+        p_id = p_data["data"][0]["id"]
+        time.sleep(2) # Pausa para evitar 429
+
+        # Busca estatísticas da temporada atual
+        res_s = fazer_requisicao(f"{BASE_URL}/players/{p_id}/seasons/{current_season_id}")
+        
+        if res_s and res_s.status_code == 200:
+            all_stats = res_s.json()["data"]["attributes"]["gameModeStats"]
+            stats = all_stats.get("squad", {})
+
+            partidas = stats.get("roundsPlayed", 0)
+
+            if partidas > 0:
+                kills = stats.get("kills", 0)
+                vitorias = stats.get("wins", 0)
+                assists = stats.get("assists", 0)
+                headshots = stats.get("headshotKills", 0)
+                revives = stats.get("revives", 0)
+                dano_total = stats.get("damageDealt", 0)
+                dist_max = stats.get("longestKill", 0.0)
+
+                # Cálculos de performance (Sua fórmula equilibrada)
+                kr = round(kills / partidas, 2)
+                dano_medio = int(dano_total / partidas)
+                win_rate = (vitorias / partidas) * 100
+                assists_pg = (assists / partidas)
+                hs_pg = (headshots / partidas)
+                revives_pg = (revives / partidas)
+
+                score = round(
+                    (kr * 40) + (dano_medio / 8) + (win_rate * 2) + 
+                    (hs_pg * 15) + (assists_pg * 10) + (revives_pg * 5)
+                , 2)
+
+                # SQL para Supabase (PostgreSQL) com todas as colunas
+                sql = """
+                INSERT INTO ranking_squad 
+                (nick, partidas, kr, vitorias, kills, dano_medio, assists, headshots, revives, kill_dist_max, score, atualizado_em) 
+                VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+                ON CONFLICT (nick) DO UPDATE SET
+                    partidas = EXCLUDED.partidas,
+                    kr = EXCLUDED.kr,
                     vitorias = EXCLUDED.vitorias,
+                    kills = EXCLUDED.kills,
+                    dano_medio = EXCLUDED.dano_medio,
+                    assists = EXCLUDED.assists,
+                    headshots = EXCLUDED.headshots,
+                    revives = EXCLUDED.revives,
+                    kill_dist_max = EXCLUDED.kill_dist_max,
                     score = EXCLUDED.score,
                     atualizado_em = EXCLUDED.atualizado_em
-            """, (nick, wins, score, datetime.utcnow()))
-            
-            conn.commit()
+                """
+                
+                cursor.execute(sql, (
+                    player, partidas, kr, vitorias, kills, dano_medio, 
+                    assists, headshots, revives, dist_max, score, datetime.utcnow()
+                ))
+                conn.commit()
+                print(f" > [SUCESSO] Score: {score}")
+            else:
+                print(f" > {player} sem partidas nesta season.")
+        
+        time.sleep(5) # Delay entre jogadores para garantir estabilidade
 
-        cursor.close()
-        conn.close()
-        print("✅ Ranking atualizado com sucesso no Supabase!")
+    cursor.close()
+    conn.close()
+    print("\n✅ --- ATUALIZAÇÃO FINALIZADA COM SUCESSO ---")
 
-    except Exception as e:
-        print(f"💥 Erro fatal: {e}")
-
-if __name__ == "__main__":
-    get_stats()
+except Exception as e:
+    print(f"💥 Erro fatal: {e}")
