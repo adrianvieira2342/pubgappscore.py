@@ -52,28 +52,24 @@ st.markdown("""
 # FUNÇÃO DO CRONÔMETRO (BR)
 # =============================
 def exibir_timer_atualizacao():
-    # Pega a hora UTC (padrão dos servidores)
-    agora_utc = datetime.now(pytz.utc)
-    # Converte explicitamente para o fuso de São Paulo
-    fuso_br = pytz.timezone('America/Sao_Paulo')
-    agora_br = agora_utc.astimezone(fuso_br)
+    # Pega o horário UTC absoluto (o mesmo que o GitHub Actions usa para o cron)
+    # Isso garante que o cálculo não mude se o servidor estiver nos EUA ou na Europa
+    agora = datetime.now(pytz.utc)
     
-    # Debug opcional: descomente a linha abaixo para ver se a hora no site bate com seu relógio
-    # st.write(f"Hora detectada no site: {agora_br.strftime('%H:%M:%S')}")
-
-    # Cálculo do ciclo de 10 minutos
-    minuto_atual = agora_br.minute
-    segundo_atual = agora_br.second
+    minuto_atual = agora.minute
+    segundo_atual = agora.second
     
-    # Descobre quantos minutos faltam para o próximo múltiplo de 10 (ex: :10, :20...)
-    proxima_janela = ((minuto_atual // 10) + 1) * 10
-    if proxima_janela == 60: proxima_janela = 0
+    # O seu cron é '*/10'. 
+    # Calculamos quanto falta para o próximo múltiplo de 10 minutos.
+    minutos_para_proximo = (INTERVALO_WORKFLOW - 1) - (minuto_atual % INTERVALO_WORKFLOW)
+    segundos_para_proximo = 59 - segundo_atual
     
-    faltam_minutos = (proxima_janela - minuto_atual - 1) % 10
-    faltam_segundos = 59 - segundo_atual
+    # Se por algum motivo o cálculo der negativo, zeramos
+    minutos_exibir = max(0, minutos_para_proximo)
+    segundos_exibir = max(0, segundos_para_proximo)
     
     st.markdown(
-        f"<div class='timer-text'>⏳ Próxima janela de atualização do banco em: <b>{faltam_minutos:02d}:{faltam_segundos:02d}</b></div>", 
+        f"<div class='timer-text'>⏳ Próxima tentativa de atualização (GitHub): <b>{minutos_exibir:02d}:{segundos_exibir:02d}</b></div>", 
         unsafe_allow_html=True
     )
 
