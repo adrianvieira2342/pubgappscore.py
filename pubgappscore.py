@@ -1,11 +1,13 @@
 import streamlit as st
 import pandas as pd
 from datetime import datetime
+import pytz
 
 # =========================================================
 # CONFIGURAÇÃO DE CONTROLE (AJUSTE AQUI SE MUDAR O GITHUB)
 # =========================================================
-INTERVALO_WORKFLOW = 10  # Tempo em minutos definido no seu .yml
+INTERVALO_WORKFLOW = 10  # Ciclo de 10 min do seu .yml
+FUSO_HORARIO = 'America/Sao_Paulo' 
 
 # =============================
 # CONFIGURAÇÃO DA PÁGINA
@@ -47,18 +49,23 @@ st.markdown("""
 """, unsafe_allow_html=True)
 
 # =============================
-# FUNÇÃO DO CRONÔMETRO
+# FUNÇÃO DO CRONÔMETRO (BR)
 # =============================
 def exibir_timer_atualizacao():
-    agora = datetime.now()
-    # Cálculo sincronizado com o ciclo do GitHub Actions
-    minutos_faltando = (INTERVALO_WORKFLOW - 1) - (agora.minute % INTERVALO_WORKFLOW)
-    segundos_faltando = 59 - agora.second
-    
-    st.markdown(
-        f"<div class='timer-text'>⏳ Próxima janela de atualização do banco em: <b>{minutos_faltando:02d}:{segundos_faltando:02d}</b></div>", 
-        unsafe_allow_html=True
-    )
+    try:
+        fuso = pytz.timezone(FUSO_HORARIO)
+        agora = datetime.now(fuso)
+        
+        # Sincroniza com os minutos 00, 10, 20, 30, 40, 50 do relógio
+        minutos_faltando = (INTERVALO_WORKFLOW - 1) - (agora.minute % INTERVALO_WORKFLOW)
+        segundos_faltando = 59 - agora.second
+        
+        st.markdown(
+            f"<div class='timer-text'>⏳ Próxima janela de atualização do banco em: <b>{minutos_faltando:02d}:{segundos_faltando:02d}</b></div>", 
+            unsafe_allow_html=True
+        )
+    except Exception:
+        st.markdown("<div class='timer-text'>⏳ Sincronizando cronômetro...</div>", unsafe_allow_html=True)
 
 # =============================
 # CONEXÃO COM BANCO
@@ -124,7 +131,6 @@ def processar_ranking_completo(df_ranking, col_score):
 # =============================
 st.markdown("<h1 style='text-align:center;'>🎮 Ranking Squad - Season 40</h1>", unsafe_allow_html=True)
 
-# Exibe o timer baseado na variável centralizada
 exibir_timer_atualizacao()
 
 st.markdown("---")
@@ -132,7 +138,7 @@ st.markdown("---")
 df_bruto = get_data()
 
 if not df_bruto.empty:
-    # Correção de decimais em colunas de contagem
+    # Formatação de inteiros
     cols_inteiras = ['partidas', 'vitorias', 'kills', 'assists', 'headshots', 'revives', 'dano_medio']
     for col in cols_inteiras:
         df_bruto[col] = pd.to_numeric(df_bruto[col], errors='coerce').fillna(0).astype(int)
@@ -164,14 +170,13 @@ if not df_bruto.empty:
         with top3:
             st.metric("🥉 3º Lugar", ranking_final.iloc[2]['nick'], f"{ranking_final.iloc[2][col_score]} pts")
 
-        # Formatação para remover .00
         format_dict = {
             'kr': "{:.2f}", 'kill_dist_max': "{:.2f}", col_score: "{:.2f}",
             'partidas': "{:d}", 'vitorias': "{:d}", 'kills': "{:d}", 
             'assists': "{:d}", 'headshots': "{:d}", 'revives': "{:d}", 'dano_medio': "{:d}"
         }
 
-        # Altura dinâmica para mostrar todos os jogadores sem scroll
+        # Altura dinâmica para expandir a lista
         altura_dinamica = (len(ranking_final) * 35) + 100
 
         st.dataframe(
@@ -190,7 +195,7 @@ if not df_bruto.empty:
 
     with tab2:
         f_team = ((df_bruto['vitorias'] / df_bruto['partidas_calc']) * 1000) + ((df_bruto['revives'] / df_bruto['partidas_calc']) * 50) + ((df_bruto['assists'] / df_bruto['partidas_calc']) * 35)
-        renderizar_ranking(df_bruto.copy(), 'Score_Team', f_team)
+        renderizar_ranking(df_local=df_bruto.copy(), col_score='Score_Team', formula=f_team)
 
     with tab3:
         f_elite = (df_bruto['kr'] * 50) + ((df_bruto['headshots'] / df_bruto['partidas_calc']) * 60) + (df_bruto['dano_medio'] / 5)
