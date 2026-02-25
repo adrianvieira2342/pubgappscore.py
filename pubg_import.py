@@ -4,10 +4,15 @@ import psycopg2
 import time
 from datetime import datetime
 
+# ==========================
+# CONFIGURAÇÕES E AMBIENTE
+# ==========================
 DATABASE_URL = os.environ.get("DATABASE_URL")
 PUBG_API_KEY = os.environ.get("PUBG_API_KEY")
 REGION = "steam"
-SEASON_ID = "division.bro.official.pc-40" 
+
+# Alterado para 'lifetime' para garantir que os dados não venham zerados
+SEASON_ID = "lifetime" 
 
 players = {
     "Adrian-Wan": "account.58beb24ada7346408942d42dc64c7901",
@@ -30,51 +35,64 @@ players = {
 }
 
 def get_stats():
-    conn = psycopg2.connect(DATABASE_URL)
-    cursor = conn.cursor()
-    headers = {"Authorization": f"Bearer {PUBG_API_KEY}", "Accept": "application/vnd.api+json"}
+    try:
+        # Conexão com o Supabase via DATABASE_URL
+        conn = psycopg2.connect(DATABASE_URL)
+        cursor = conn.cursor()
+        headers = {
+            "Authorization": f"Bearer {PUBG_API_KEY}", 
+            "Accept": "application/vnd.api+json"
+        }
 
-    for nick, p_id in players.items():
-        # Delay de 6s para evitar Erro 429
-        time.sleep(6) 
-        
-        url = f"https://api.pubg.com/shards/{REGION}/players/{p_id}/seasons/{SEASON_ID}"
-        res = requests.get(url, headers=headers)
-        
-        if res.status_code != 200:
-            print(f"❌ Erro {res.status_code} em {nick}")
-            continue
+        print(f"🚀 Iniciando busca em modo: {SEASON_ID}")
 
-        data = res.json()
-        all_modes = data["data"]["attributes"]["gameModeStats"]
+        for nick, p_id in players.items():
+            # Delay de 6 segundos para respeitar o limite de 10 requisições/minuto da API
+            time.sleep(6) 
+            
+            # URL específica para o modo lifetime (Squad Normal)
+            url = f"https://api.pubg.com/shards/{REGION}/players/{p_id}/seasons/lifetime"
+            res = requests.get(url, headers=headers)
+            
+            if res.status_code != 200:
+                print(f"❌ Erro {res.status_code} em {nick}")
+                continue
 
-        # Tenta Squad TPP, se estiver zerado tenta Squad FPP
-        stats = all_modes.get("squad", {})
-        if stats.get("roundsPlayed", 0) == 0:
-            stats = all_modes.get("squad-fpp", {})
+            data = res.json()
+            all_modes = data["data"]["attributes"]["gameModeStats"]
 
-        wins = stats.get("wins", 0)
-        kills = stats.get("kills", 0)
-        # Se 'rankPoints' for 0 (comum no normal), usamos kills para o score
-        score = stats.get("rankPoints", 0)
-        if score == 0:
-            score = kills
+            # Busca dados de Squad TPP, se estiver zerado tenta Squad FPP
+            stats = all_modes.get("squad", {})
+            if stats.get("roundsPlayed", 0) == 0:
+                stats = all_modes.get("squad-fpp", {})
 
-        print(f"📊 {nick} -> Wins: {wins}, Score/Kills: {score} (Partidas: {stats.get('roundsPlayed', 0)})")
+            wins = stats.get("wins", 0)
+            kills = stats.get("kills", 0)
+            
+            # Como o modo Normal não tem RankPoints, usamos Kills para popular a coluna 'score'
+            score = kills 
 
-        cursor.execute("""
-            INSERT INTO ranking_squad (nick, vitorias, score, atualizado_em)
-            VALUES (%s, %s, %s, %s)
-            ON CONFLICT (nick)
-            DO UPDATE SET
-                vitorias = EXCLUDED.vitorias,
-                score = EXCLUDED.score,
-                atualizado_em = EXCLUDED.atualizado_em
-        """, (nick, wins, score, datetime.utcnow()))
-        conn.commit()
+            print(f"📊 {nick} -> Wins: {wins}, Kills: {kills} (Partidas Totais: {stats.get('roundsPlayed', 0)})")
 
-    cursor.close()
-    conn.close()
+            # Comando para inserir ou atualizar baseado no NICK
+            cursor.execute("""
+                INSERT INTO ranking_squad (nick, vitorias, score, atualizado_em)
+                VALUES (%s, %s, %s, %s)
+                ON CONFLICT (nick)
+                DO UPDATE SET
+                    vitorias = EXCLUDED.vitorias,
+                    score = EXCLUDED.score,
+                    atualizado_em = EXCLUDED.atualizado_em
+            """, (nick, wins, score, datetime.utcnow()))
+            
+            conn.commit()
+
+        cursor.close()
+        conn.close()
+        print("✅ Ranking atualizado com sucesso no Supabase!")
+
+    except Exception as e:
+        print(f"💥 Erro fatal: {e}")
 
 if __name__ == "__main__":
     get_stats()
