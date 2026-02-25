@@ -37,8 +37,28 @@ st.markdown("""
         font-size: 16px;
         font-weight: bold;
     }
+    .timer-text {
+        text-align: center;
+        color: #8b949e;
+        font-size: 14px;
+        margin-bottom: 10px;
+    }
 </style>
 """, unsafe_allow_html=True)
+
+# =============================
+# FUNÇÃO DO CRONÔMETRO
+# =============================
+def exibir_timer_atualizacao():
+    agora = datetime.now()
+    # Cálculo sincronizado com o ciclo do GitHub Actions
+    minutos_faltando = (INTERVALO_WORKFLOW - 1) - (agora.minute % INTERVALO_WORKFLOW)
+    segundos_faltando = 59 - agora.second
+    
+    st.markdown(
+        f"<div class='timer-text'>⏳ Próxima janela de atualização do banco em: <b>{minutos_faltando:02d}:{segundos_faltando:02d}</b></div>", 
+        unsafe_allow_html=True
+    )
 
 # =============================
 # CONEXÃO COM BANCO
@@ -103,19 +123,22 @@ def processar_ranking_completo(df_ranking, col_score):
 # INTERFACE
 # =============================
 st.markdown("<h1 style='text-align:center;'>🎮 Ranking Squad - Season 40</h1>", unsafe_allow_html=True)
+
+# Exibe o timer baseado na variável centralizada
+exibir_timer_atualizacao()
+
 st.markdown("---")
 
 df_bruto = get_data()
 
 if not df_bruto.empty:
-
+    # Correção de decimais em colunas de contagem
     cols_inteiras = ['partidas', 'vitorias', 'kills', 'assists', 'headshots', 'revives', 'dano_medio']
     for col in cols_inteiras:
         df_bruto[col] = pd.to_numeric(df_bruto[col], errors='coerce').fillna(0).astype(int)
     
     df_bruto['partidas_calc'] = df_bruto['partidas'].replace(0, 1)
 
-    # Removida a quarta aba da lista
     tab1, tab2, tab3 = st.tabs([
         "🔥 PRO (Equilibrado)", 
         "🤝 TEAM (Suporte)", 
@@ -141,13 +164,15 @@ if not df_bruto.empty:
         with top3:
             st.metric("🥉 3º Lugar", ranking_final.iloc[2]['nick'], f"{ranking_final.iloc[2][col_score]} pts")
 
+        # Formatação para remover .00
         format_dict = {
             'kr': "{:.2f}", 'kill_dist_max': "{:.2f}", col_score: "{:.2f}",
             'partidas': "{:d}", 'vitorias': "{:d}", 'kills': "{:d}", 
             'assists': "{:d}", 'headshots': "{:d}", 'revives': "{:d}", 'dano_medio': "{:d}"
         }
 
-        altura_dinamica = (len(ranking_final) * 35) + 80
+        # Altura dinâmica para mostrar todos os jogadores sem scroll
+        altura_dinamica = (len(ranking_final) * 35) + 100
 
         st.dataframe(
             ranking_final.style
