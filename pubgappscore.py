@@ -1,3 +1,7 @@
+import streamlit as st
+import pandas as pd
+import psycopg2
+
 # =============================
 # INTERFACE (Trecho atualizado)
 # =============================
