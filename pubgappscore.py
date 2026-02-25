@@ -7,23 +7,43 @@ import pandas as pd
 st.set_page_config(
     page_title="PUBG Squad Ranking",
     layout="wide",
-    page_icon="🎮"
+    page_icon="🎮",
+    initial_sidebar_state="collapsed"
 )
 
-# CSS para forçar largura total e visual limpo
+# =============================
+# CSS TEMA ESCURO CUSTOM
+# =============================
 st.markdown("""
-    <style>
-    .stDataFrame {width: 100%;}
-    [data-testid="stMetricValue"] {font-size: 1.6rem !important;}
-    </style>
-    """, unsafe_allow_html=True)
+<style>
+    .stApp {
+        background-color: #0e1117;
+        color: white;
+    }
+    div[data-testid="stMetric"] {
+        background-color: #161b22;
+        padding: 15px;
+        border-radius: 12px;
+        border: 1px solid #30363d;
+        text-align: center;
+    }
+    div[data-testid="stTabs"] button {
+        font-size: 16px;
+        font-weight: bold;
+    }
+</style>
+""", unsafe_allow_html=True)
 
 # =============================
-# CONEXÃO COM BANCO (SUPABASE)
+# CONEXÃO COM BANCO
 # =============================
 def get_data():
     try:
-        conn = st.connection("postgresql", type="sql", url=st.secrets["DATABASE_URL"])
+        conn = st.connection(
+            "postgresql",
+            type="sql",
+            url=st.secrets["DATABASE_URL"]
+        )
         query = "SELECT * FROM ranking_squad"
         df = conn.query(query, ttl=0)
         return df
@@ -37,93 +57,131 @@ def get_data():
 def processar_ranking_completo(df_ranking, col_score):
     total = len(df_ranking)
     novos_nicks = []
+    zonas = []
+    
     df_ranking = df_ranking.sort_values(by=col_score, ascending=False).reset_index(drop=True)
 
     for i, row in df_ranking.iterrows():
         pos = i + 1
         nick_limpo = str(row['nick'])
-        for emoji in ["💀", "💩", "👤"]: nick_limpo = nick_limpo.replace(emoji, "").strip()
+        for emoji in ["💀", "💩", "👤"]:
+            nick_limpo = nick_limpo.replace(emoji, "").strip()
 
         if pos <= 3:
             novos_nicks.append(f"💀 {nick_limpo}")
+            zonas.append("Elite Zone")
         elif pos > (total - 3):
             novos_nicks.append(f"💩 {nick_limpo}")
+            zonas.append("Cocô Zone")
         else:
             novos_nicks.append(f"👤 {nick_limpo}")
+            zonas.append("Medíocre Zone")
 
     df_ranking['Pos'] = range(1, total + 1)
     df_ranking['nick'] = novos_nicks
+    df_ranking['Classificação'] = zonas
+
+    cols_base = [
+        'Pos', 'Classificação', 'nick',
+        'partidas', 'kr', 'vitorias',
+        'kills', 'assists', 'headshots',
+        'revives', 'kill_dist_max', 'dano_medio'
+    ]
     
-    # Colunas equalizadas para evitar scroll lateral
-    cols_fixas = ['Pos', 'nick', 'partidas', 'kr', 'vitorias', 'kills', 'assists', 'revives', 'dano_medio']
-    if col_score not in cols_fixas:
-        cols_fixas.append(col_score)
+    if col_score not in cols_base:
+        cols_base.append(col_score)
         
-    return df_ranking[cols_fixas]
+    return df_ranking[cols_base]
 
 # =============================
 # INTERFACE
 # =============================
-st.markdown("# 🎮 Ranking Squad - Season 40")
+st.markdown("<h1 style='text-align:center;'>🎮 Ranking Squad - Season 40</h1>", unsafe_allow_html=True)
+st.markdown("---")
 
 df_bruto = get_data()
 
 if not df_bruto.empty:
-    # Tratamento de inteiros (remove .00)
-    cols_int = ['partidas', 'vitorias', 'kills', 'assists', 'revives', 'dano_medio']
-    for c in cols_int: 
-        df_bruto[c] = pd.to_numeric(df_bruto[c], errors='coerce').fillna(0).astype(int)
+
+    cols_inteiras = ['partidas', 'vitorias', 'kills', 'assists', 'headshots', 'revives', 'dano_medio']
+    for col in cols_inteiras:
+        df_bruto[col] = pd.to_numeric(df_bruto[col], errors='coerce').fillna(0).astype(int)
     
     df_bruto['partidas_calc'] = df_bruto['partidas'].replace(0, 1)
 
-    tab1, tab2, tab3, tab4 = st.tabs(["🔥 PRO", "🤝 TEAM", "🎯 ELITE", "📊 GERAL"])
+    tab1, tab2, tab3, tab4 = st.tabs([
+        "🔥 PRO (Equilibrado)", 
+        "🤝 TEAM (Suporte)", 
+        "🎯 ELITE (Skill)",
+        "📊 GERAL (Métricas)"
+    ])
 
     def highlight_zones(row):
-        if "💀" in str(row['nick']): return ['background-color: #004d00; color: white'] * len(row)
-        if "💩" in str(row['nick']): return ['background-color: #4d2600; color: white'] * len(row)
+        if row['Classificação'] == "Elite Zone":
+            return ['background-color: #003300; color: white; font-weight: bold'] * len(row)
+        if row['Classificação'] == "Cocô Zone":
+            return ['background-color: #4d0000; color: white; font-weight: bold'] * len(row)
         return [''] * len(row)
-
-    base_format = {
-        'kr': "{:.2f}", 'partidas': "{:d}", 'vitorias': "{:d}", 
-        'kills': "{:d}", 'assists': "{:d}", 'revives': "{:d}", 'dano_medio': "{:d}"
-    }
 
     def renderizar_ranking(df_local, col_score, formula):
         df_local[col_score] = formula.round(2)
         ranking_final = processar_ranking_completo(df_local, col_score)
 
-        t1, t2, t3 = st.columns(3)
-        t1.metric("🥇 1º", ranking_final.iloc[0]['nick'], f"{ranking_final.iloc[0][col_score]} pts")
-        t2.metric("🥈 2º", ranking_final.iloc[1]['nick'], f"{ranking_final.iloc[1][col_score]} pts")
-        t3.metric("🥉 3º", ranking_final.iloc[2]['nick'], f"{ranking_final.iloc[2][col_score]} pts")
+        top1, top2, top3 = st.columns(3)
+        with top1:
+            st.metric("🥇 1º Lugar", ranking_final.iloc[0]['nick'], f"{ranking_final.iloc[0][col_score]} pts")
+        with top2:
+            st.metric("🥈 2º Lugar", ranking_final.iloc[1]['nick'], f"{ranking_final.iloc[1][col_score]} pts")
+        with top3:
+            st.metric("🥉 3º Lugar", ranking_final.iloc[2]['nick'], f"{ranking_final.iloc[2][col_score]} pts")
 
-        fmt = base_format.copy()
-        fmt[col_score] = "{:.2f}"
+        format_dict = {
+            'kr': "{:.2f}", 'kill_dist_max': "{:.2f}", col_score: "{:.2f}",
+            'partidas': "{:d}", 'vitorias': "{:d}", 'kills': "{:d}", 
+            'assists': "{:d}", 'headshots': "{:d}", 'revives': "{:d}", 'dano_medio': "{:d}"
+        }
 
-        # Use height="auto" para expandir verticalmente sem erro
+        altura_dinamica = (len(ranking_final) * 35) + 80
+
         st.dataframe(
-            ranking_final.style.apply(highlight_zones, axis=1).format(fmt), 
-            use_container_width=True, 
-            hide_index=True,
-            height=None # Omitir ou usar "auto" resolve o erro nas versões novas
+            ranking_final.style
+            .background_gradient(cmap='YlGnBu', subset=[col_score])
+            .apply(highlight_zones, axis=1)
+            .format(format_dict),
+            use_container_width=True,
+            height=altura_dinamica,
+            hide_index=True
         )
 
     with tab1:
-        renderizar_ranking(df_bruto.copy(), 'Score_Pro', (df_bruto['kr']*40)+(df_bruto['dano_medio']/8)+((df_bruto['vitorias']/df_bruto['partidas_calc'])*500))
+        f_pro = (df_bruto['kr'] * 40) + (df_bruto['dano_medio'] / 8) + ((df_bruto['vitorias'] / df_bruto['partidas_calc']) * 500)
+        renderizar_ranking(df_bruto.copy(), 'Score_Pro', f_pro)
+
     with tab2:
-        renderizar_ranking(df_bruto.copy(), 'Score_Team', ((df_bruto['vitorias']/df_bruto['partidas_calc'])*1000)+((df_bruto['revives']/df_bruto['partidas_calc'])*50)+((df_bruto['assists']/df_bruto['partidas_calc'])*35))
+        f_team = ((df_bruto['vitorias'] / df_bruto['partidas_calc']) * 1000) + ((df_bruto['revives'] / df_bruto['partidas_calc']) * 50) + ((df_bruto['assists'] / df_bruto['partidas_calc']) * 35)
+        renderizar_ranking(df_bruto.copy(), 'Score_Team', f_team)
+
     with tab3:
-        renderizar_ranking(df_bruto.copy(), 'Score_Elite', (df_bruto['kr']*50)+((df_bruto['headshots'].fillna(0)/df_bruto['partidas_calc'])*60)+(df_bruto['dano_medio']/5))
+        f_elite = (df_bruto['kr'] * 50) + ((df_bruto['headshots'] / df_bruto['partidas_calc']) * 60) + (df_bruto['dano_medio'] / 5)
+        renderizar_ranking(df_bruto.copy(), 'Score_Elite', f_elite)
+
     with tab4:
-        st.subheader("Métricas Gerais")
+        st.subheader("📊 Métricas Brutas (Ordenado por Kills)")
         ranking_geral = processar_ranking_completo(df_bruto.copy(), 'kills')
+
+        altura_dinamica = (len(ranking_geral) * 35) + 80
+
         st.dataframe(
-            ranking_geral.style.apply(highlight_zones, axis=1).format(base_format), 
-            use_container_width=True, 
+            ranking_geral.style
+            .apply(highlight_zones, axis=1)
+            .background_gradient(cmap='Greens', subset=['kills']),
+            use_container_width=True,
+            height=altura_dinamica,
             hide_index=True
-            # height removido para usar o padrão expansível do Streamlit
         )
 
-    st.markdown("<div style='text-align: center; color: gray; font-size: 0.8rem; padding: 40px;'>📊 By Adriano Vieira</div>", unsafe_allow_html=True)
+    st.markdown("---")
+    st.markdown("<div style='text-align: center; color: gray; padding: 20px;'>📊 <b>By Adriano Vieira</b></div>", unsafe_allow_html=True)
+
 else:
-    st.warning("Aguardando dados...")
+    st.warning("Conectado ao banco. Aguardando dados...")
