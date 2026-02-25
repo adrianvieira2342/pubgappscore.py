@@ -2,7 +2,7 @@ name: Atualizar Ranking PUBG
 
 on:
   schedule:
-    - cron: '*/2 * * * *'  # Roda no intervalo mínimo permitido (5 min)
+    - cron: '*/10 * * * *'  # Roda no intervalo mínimo permitido (10 min)
   workflow_dispatch:       # Mantém o botão de rodar manualmente ativo
   push:                    # Roda automaticamente sempre que você salvar um código
     branches: [ main ]
