@@ -10,13 +10,11 @@ st.set_page_config(
     page_icon="🎮"
 )
 
-# CSS para forçar largura total e remover espaços desnecessários
+# CSS para forçar largura total e visual limpo
 st.markdown("""
     <style>
     .stDataFrame {width: 100%;}
     [data-testid="stMetricValue"] {font-size: 1.6rem !important;}
-    /* Remove o limite de altura do container interno da tabela */
-    [data-testid="stTable"] {overflow: visible !important;}
     </style>
     """, unsafe_allow_html=True)
 
@@ -38,7 +36,7 @@ def get_data():
 # =============================
 def processar_ranking_completo(df_ranking, col_score):
     total = len(df_ranking)
-    novos_nicks, zonas = [], []
+    novos_nicks = []
     df_ranking = df_ranking.sort_values(by=col_score, ascending=False).reset_index(drop=True)
 
     for i, row in df_ranking.iterrows():
@@ -47,11 +45,11 @@ def processar_ranking_completo(df_ranking, col_score):
         for emoji in ["💀", "💩", "👤"]: nick_limpo = nick_limpo.replace(emoji, "").strip()
 
         if pos <= 3:
-            novos_nicks.append(f"💀 {nick_limpo}"); zonas.append("Elite Zone")
-        elif pos > (total - 2):
-            novos_nicks.append(f"💩 {nick_limpo}"); zonas.append("Cocô Zone")
+            novos_nicks.append(f"💀 {nick_limpo}")
+        elif pos > (total - 3):
+            novos_nicks.append(f"💩 {nick_limpo}")
         else:
-            novos_nicks.append(f"👤 {nick_limpo}"); zonas.append("Medíocre Zone")
+            novos_nicks.append(f"👤 {nick_limpo}")
 
     df_ranking['Pos'] = range(1, total + 1)
     df_ranking['nick'] = novos_nicks
@@ -102,12 +100,12 @@ if not df_bruto.empty:
         fmt = base_format.copy()
         fmt[col_score] = "{:.2f}"
 
-        # height=None faz com que a tabela se expanda para mostrar todas as linhas
+        # Use height="auto" para expandir verticalmente sem erro
         st.dataframe(
             ranking_final.style.apply(highlight_zones, axis=1).format(fmt), 
             use_container_width=True, 
             hide_index=True,
-            height=None 
+            height=None # Omitir ou usar "auto" resolve o erro nas versões novas
         )
 
     with tab1:
@@ -122,8 +120,8 @@ if not df_bruto.empty:
         st.dataframe(
             ranking_geral.style.apply(highlight_zones, axis=1).format(base_format), 
             use_container_width=True, 
-            hide_index=True,
-            height=None
+            hide_index=True
+            # height removido para usar o padrão expansível do Streamlit
         )
 
     st.markdown("<div style='text-align: center; color: gray; font-size: 0.8rem; padding: 40px;'>📊 By Adriano Vieira</div>", unsafe_allow_html=True)
