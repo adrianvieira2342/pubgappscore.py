@@ -1,5 +1,11 @@
 import streamlit as st
 import pandas as pd
+from datetime import datetime
+
+# =========================================================
+# CONFIGURAÇÃO DE CONTROLE (AJUSTE AQUI SE MUDAR O GITHUB)
+# =========================================================
+INTERVALO_WORKFLOW = 10  # Tempo em minutos definido no seu .yml
 
 # =============================
 # CONFIGURAÇÃO DA PÁGINA
