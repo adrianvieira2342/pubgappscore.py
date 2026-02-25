@@ -34,21 +34,22 @@ st.markdown("""
         font-weight: bold;
     }
     .status-badge {
-        padding: 5px 12px;
+        padding: 6px 16px;
         border-radius: 20px;
-        font-size: 12px;
-        font-weight: 500;
+        font-size: 13px;
+        font-weight: 600;
         background-color: #238636;
         color: white;
         border: 1px solid #2ea043;
         display: inline-block;
-        margin-bottom: 20px;
+        margin-bottom: 25px;
+        box-shadow: 0 4px 6px rgba(0,0,0,0.3);
     }
 </style>
 """, unsafe_allow_html=True)
 
 # =============================
-# CONEXÃO COM BANCO E UTILITÁRIOS
+# CONEXÃO COM BANCO
 # =============================
 def get_data():
     try:
@@ -57,37 +58,19 @@ def get_data():
             type="sql",
             url=st.secrets["DATABASE_URL"]
         )
-        # Buscamos todos os dados
         query = "SELECT * FROM ranking_squad"
+        # ttl=0 garante que ele não use cache e pegue o dado mais fresco possível
         df = conn.query(query, ttl=0)
-        return df
+        
+        # Capturamos o exato momento da resposta do banco
+        fuso_br = pytz.timezone('America/Sao_Paulo')
+        agora_br = datetime.now(pytz.utc).astimezone(fuso_br)
+        horario_leitura = agora_br.strftime("%d/%m/%Y %H:%M:%S")
+        
+        return df, horario_leitura
     except Exception as e:
         st.error(f"Erro na conexão com o banco: {e}")
-        return pd.DataFrame()
-
-def obter_horario_atualizacao_real(df):
-    """Extrai o horário mais recente da coluna de data do banco de dados"""
-    try:
-        # Tenta encontrar a coluna de data (ajuste o nome se for diferente de 'updated_at' ou 'data_hora')
-        colunas_data = [c for c in df.columns if 'date' in c.lower() or 'time' in c.lower() or 'data' in c.lower() or 'update' in c.lower()]
-        
-        if colunas_data:
-            col_data = colunas_data[0]
-            # Converte para datetime caso esteja como string
-            ult_dt = pd.to_datetime(df[col_data]).max()
-            
-            # Converte de UTC (banco) para Brasília
-            fuso_br = pytz.timezone('America/Sao_Paulo')
-            
-            if ult_dt.tzinfo is None:
-                ult_dt = pytz.utc.localize(ult_dt)
-            
-            ult_dt_br = ult_dt.astimezone(fuso_br)
-            return ult_dt_br.strftime("%d/%m/%Y %H:%M:%S")
-        else:
-            return "Coluna de data não encontrada no banco"
-    except Exception as e:
-        return f"Erro ao processar data: {e}"
+        return pd.DataFrame(), None
 
 # =============================
 # PROCESSAMENTO DO RANKING
@@ -132,61 +115,53 @@ def processar_ranking_completo(df_ranking, col_score):
     return df_ranking[cols_base]
 
 # =============================
-# INTERFACE
+# INTERFACE PRINCIPAL
 # =============================
 st.markdown("<h1 style='text-align:center;'>🎮 Ranking Squad - Season 40</h1>", unsafe_allow_html=True)
 
-df_bruto = get_data()
+df_bruto, ultima_sincronizacao = get_data()
 
 if not df_bruto.empty:
-    # --- AJUSTE: Agora busca a data real gravada nas linhas do banco ---
-    data_atualizacao_db = obter_horario_atualizacao_real(df_bruto)
-    
+    # Badge Centralizado com o horário real da última consulta bem-sucedida
     st.markdown(f"""
         <div style='text-align: center;'>
             <div class='status-badge'>
-                ● Última Carga no Banco (Brasília): {data_atualizacao_db}
+                ● Dados Sincronizados (Brasília): {ultima_sincronizacao}
             </div>
         </div>
     """, unsafe_allow_html=True)
 
-    # Conversão de tipos
+    # Tratamento de dados numéricos
     cols_inteiras = ['partidas', 'vitorias', 'kills', 'assists', 'headshots', 'revives', 'dano_medio']
     for col in cols_inteiras:
         df_bruto[col] = pd.to_numeric(df_bruto[col], errors='coerce').fillna(0).astype(int)
     
-    # Filtro de jogadores ativos
+    # Filtro para remover quem não jogou na temporada
     df_bruto = df_bruto[df_bruto['partidas'] > 0].copy()
     
     if df_bruto.empty:
-        st.info("Nenhum jogador possui partidas registradas nesta temporada.")
+        st.info("Aguardando registros de partidas para esta temporada...")
     else:
         df_bruto['partidas_calc'] = df_bruto['partidas'].replace(0, 1)
 
-        tab1, tab2, tab3 = st.tabs([
-            "🔥 PRO (Equilibrado)", 
-            "🤝 TEAM (Suporte)", 
-            "🎯 ELITE (Skill)"
-        ])
+        tab1, tab2, tab3 = st.tabs(["🔥 PRO", "🤝 TEAM", "🎯 ELITE"])
 
         def highlight_zones(row):
             if row['Classificação'] == "Elite Zone":
-                return ['background-color: #003300; color: white; font-weight: bold'] * len(row)
+                return ['background-color: #0b2e13; color: #d4edda; font-weight: bold'] * len(row)
             if row['Classificação'] == "Cocô Zone":
-                return ['background-color: #4d0000; color: white; font-weight: bold'] * len(row)
+                return ['background-color: #440a0a; color: #f8d7da; font-weight: bold'] * len(row)
             return [''] * len(row)
 
         def renderizar_ranking(df_local, col_score, formula):
             df_local[col_score] = formula.round(2)
             ranking_final = processar_ranking_completo(df_local, col_score)
 
-            top1, top2, top3 = st.columns(3)
-            with top1:
-                st.metric("🥇 1º Lugar", ranking_final.iloc[0]['nick'] if len(ranking_final) > 0 else "-", f"{ranking_final.iloc[0][col_score] if len(ranking_final) > 0 else 0} pts")
-            with top2:
-                st.metric("🥈 2º Lugar", ranking_final.iloc[1]['nick'] if len(ranking_final) > 1 else "-", f"{ranking_final.iloc[1][col_score] if len(ranking_final) > 1 else 0} pts")
-            with top3:
-                st.metric("🥉 3º Lugar", ranking_final.iloc[2]['nick'] if len(ranking_final) > 2 else "-", f"{ranking_final.iloc[2][col_score] if len(ranking_final) > 2 else 0} pts")
+            # Pódio
+            t1, t2, t3 = st.columns(3)
+            with t1: st.metric("🥇 1º", ranking_final.iloc[0]['nick'], f"{ranking_final.iloc[0][col_score]} pts")
+            with t2: st.metric("🥈 2º", ranking_final.iloc[1]['nick'], f"{ranking_final.iloc[1][col_score]} pts")
+            with t3: st.metric("🥉 3º", ranking_final.iloc[2]['nick'], f"{ranking_final.iloc[2][col_score]} pts")
 
             format_dict = {
                 'kr': "{:.2f}", 'kill_dist_max': "{:.2f}", col_score: "{:.2f}",
@@ -194,15 +169,13 @@ if not df_bruto.empty:
                 'assists': "{:d}", 'headshots': "{:d}", 'revives': "{:d}", 'dano_medio': "{:d}"
             }
 
-            altura_dinamica = (len(ranking_final) * 35) + 80
-
             st.dataframe(
                 ranking_final.style
                 .background_gradient(cmap='YlGnBu', subset=[col_score])
                 .apply(highlight_zones, axis=1)
                 .format(format_dict),
                 use_container_width=True,
-                height=altura_dinamica,
+                height=((len(ranking_final) * 35) + 100),
                 hide_index=True
             )
 
@@ -219,7 +192,7 @@ if not df_bruto.empty:
             renderizar_ranking(df_bruto.copy(), 'Score_Elite', f_elite)
 
     st.markdown("---")
-    st.markdown("<div style='text-align: center; color: gray; padding: 20px;'>📊 <b>By Adriano Vieira</b></div>", unsafe_allow_html=True)
+    st.markdown("<div style='text-align: center; color: #8899A6; font-size: 14px;'>📊 Desenvolvido por Adriano Vieira</div>", unsafe_allow_html=True)
 
 else:
-    st.warning("Conectado ao banco. Aguardando dados...")
+    st.warning("Conectado ao banco. Aguardando a carga de dados...")
