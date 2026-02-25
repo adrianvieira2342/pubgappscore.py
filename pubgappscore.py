@@ -33,17 +33,15 @@ st.markdown("""
         font-size: 16px;
         font-weight: bold;
     }
-    .status-badge {
-        padding: 6px 16px;
-        border-radius: 20px;
-        font-size: 13px;
-        font-weight: 600;
-        background-color: #238636;
+    .sync-bar {
+        background-color: #1a7f37;
         color: white;
-        border: 1px solid #2ea043;
-        display: inline-block;
-        margin-bottom: 25px;
-        box-shadow: 0 4px 6px rgba(0,0,0,0.3);
+        padding: 10px;
+        border-radius: 20px;
+        text-align: center;
+        font-weight: bold;
+        margin-bottom: 20px;
+        font-size: 14px;
     }
 </style>
 """, unsafe_allow_html=True)
@@ -59,18 +57,11 @@ def get_data():
             url=st.secrets["DATABASE_URL"]
         )
         query = "SELECT * FROM ranking_squad"
-        # ttl=0 garante que ele não use cache e pegue o dado mais fresco possível
         df = conn.query(query, ttl=0)
-        
-        # Capturamos o exato momento da resposta do banco
-        fuso_br = pytz.timezone('America/Sao_Paulo')
-        agora_br = datetime.now(pytz.utc).astimezone(fuso_br)
-        horario_leitura = agora_br.strftime("%d/%m/%Y %H:%M:%S")
-        
-        return df, horario_leitura
+        return df
     except Exception as e:
         st.error(f"Erro na conexão com o banco: {e}")
-        return pd.DataFrame(), None
+        return pd.DataFrame()
 
 # =============================
 # PROCESSAMENTO DO RANKING
@@ -115,53 +106,74 @@ def processar_ranking_completo(df_ranking, col_score):
     return df_ranking[cols_base]
 
 # =============================
-# INTERFACE PRINCIPAL
+# INTERFACE
 # =============================
 st.markdown("<h1 style='text-align:center;'>🎮 Ranking Squad - Season 40</h1>", unsafe_allow_html=True)
 
-df_bruto, ultima_sincronizacao = get_data()
+df_bruto = get_data()
 
 if not df_bruto.empty:
-    # Badge Centralizado com o horário real da última consulta bem-sucedida
+    
+    # --- LOGICA DE SINCRONIZAÇÃO (CORREÇÃO DO HORÁRIO) ---
+    try:
+        # Pega a data mais recente da coluna 'atualizado_em'
+        ultima_sinc = pd.to_datetime(df_bruto['atualizado_em']).max()
+        
+        # Se a data vier do banco como UTC (fuso zero), convertemos para Brasília
+        if ultima_sinc.tzinfo is None:
+            ultima_sinc = ultima_sinc.tz_localize('UTC')
+        
+        fuso_br = pytz.timezone('America/Sao_Paulo')
+        ultima_sinc_br = ultima_sinc.astimezone(fuso_br)
+        data_formatada = ultima_sinc_br.strftime('%d/%m/%Y %H:%M:%S')
+    except:
+        data_formatada = "--/--/---- --:--:--"
+
+    # Exibe a tarja verde com o horário REAL do banco
     st.markdown(f"""
-        <div style='text-align: center;'>
-            <div class='status-badge'>
-                ● Dados Sincronizados (Brasília): {ultima_sincronizacao}
-            </div>
+        <div class="sync-bar">
+            ● Dados Sincronizados (Brasília): {data_formatada}
         </div>
     """, unsafe_allow_html=True)
+    
+    st.markdown("---")
 
-    # Tratamento de dados numéricos
     cols_inteiras = ['partidas', 'vitorias', 'kills', 'assists', 'headshots', 'revives', 'dano_medio']
     for col in cols_inteiras:
         df_bruto[col] = pd.to_numeric(df_bruto[col], errors='coerce').fillna(0).astype(int)
     
-    # Filtro para remover quem não jogou na temporada
+    # Filtra apenas jogadores com 1 ou mais partidas
     df_bruto = df_bruto[df_bruto['partidas'] > 0].copy()
     
     if df_bruto.empty:
-        st.info("Aguardando registros de partidas para esta temporada...")
+        st.info("Nenhum jogador possui partidas registradas nesta temporada.")
     else:
         df_bruto['partidas_calc'] = df_bruto['partidas'].replace(0, 1)
 
-        tab1, tab2, tab3 = st.tabs(["🔥 PRO", "🤝 TEAM", "🎯 ELITE"])
+        tab1, tab2, tab3 = st.tabs([
+            "🔥 PRO (Equilibrado)", 
+            "🤝 TEAM (Suporte)", 
+            "🎯 ELITE (Skill)"
+        ])
 
         def highlight_zones(row):
             if row['Classificação'] == "Elite Zone":
-                return ['background-color: #0b2e13; color: #d4edda; font-weight: bold'] * len(row)
+                return ['background-color: #003300; color: white; font-weight: bold'] * len(row)
             if row['Classificação'] == "Cocô Zone":
-                return ['background-color: #440a0a; color: #f8d7da; font-weight: bold'] * len(row)
+                return ['background-color: #4d0000; color: white; font-weight: bold'] * len(row)
             return [''] * len(row)
 
         def renderizar_ranking(df_local, col_score, formula):
             df_local[col_score] = formula.round(2)
             ranking_final = processar_ranking_completo(df_local, col_score)
 
-            # Pódio
-            t1, t2, t3 = st.columns(3)
-            with t1: st.metric("🥇 1º", ranking_final.iloc[0]['nick'], f"{ranking_final.iloc[0][col_score]} pts")
-            with t2: st.metric("🥈 2º", ranking_final.iloc[1]['nick'], f"{ranking_final.iloc[1][col_score]} pts")
-            with t3: st.metric("🥉 3º", ranking_final.iloc[2]['nick'], f"{ranking_final.iloc[2][col_score]} pts")
+            top1, top2, top3 = st.columns(3)
+            with top1:
+                st.metric("🥇 1º Lugar", ranking_final.iloc[0]['nick'] if len(ranking_final) > 0 else "-", f"{ranking_final.iloc[0][col_score] if len(ranking_final) > 0 else 0} pts")
+            with top2:
+                st.metric("🥈 2º Lugar", ranking_final.iloc[1]['nick'] if len(ranking_final) > 1 else "-", f"{ranking_final.iloc[1][col_score] if len(ranking_final) > 1 else 0} pts")
+            with top3:
+                st.metric("🥉 3º Lugar", ranking_final.iloc[2]['nick'] if len(ranking_final) > 2 else "-", f"{ranking_final.iloc[2][col_score] if len(ranking_final) > 2 else 0} pts")
 
             format_dict = {
                 'kr': "{:.2f}", 'kill_dist_max': "{:.2f}", col_score: "{:.2f}",
@@ -169,13 +181,15 @@ if not df_bruto.empty:
                 'assists': "{:d}", 'headshots': "{:d}", 'revives': "{:d}", 'dano_medio': "{:d}"
             }
 
+            altura_dinamica = (len(ranking_final) * 35) + 120
+
             st.dataframe(
                 ranking_final.style
                 .background_gradient(cmap='YlGnBu', subset=[col_score])
                 .apply(highlight_zones, axis=1)
                 .format(format_dict),
                 use_container_width=True,
-                height=((len(ranking_final) * 35) + 100),
+                height=altura_dinamica,
                 hide_index=True
             )
 
@@ -192,7 +206,7 @@ if not df_bruto.empty:
             renderizar_ranking(df_bruto.copy(), 'Score_Elite', f_elite)
 
     st.markdown("---")
-    st.markdown("<div style='text-align: center; color: #8899A6; font-size: 14px;'>📊 Desenvolvido por Adriano Vieira</div>", unsafe_allow_html=True)
+    st.markdown("<div style='text-align: center; color: gray; padding: 20px;'>📊 <b>By Adriano Vieira</b></div>", unsafe_allow_html=True)
 
 else:
-    st.warning("Conectado ao banco. Aguardando a carga de dados...")
+    st.warning("Conectado ao banco. Aguardando dados...")
