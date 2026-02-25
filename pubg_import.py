@@ -9,7 +9,7 @@ API_KEY = os.environ.get("PUBG_API_KEY")
 BASE_URL = "https://api.pubg.com/shards/steam"
 headers = {"Authorization": f"Bearer {API_KEY}", "Accept": "application/vnd.api+json"}
 
-players = ["Adrian-Wan", "MironoteuCool", "FabioEspeto", "Mamutag_Komander", "Robson_Foz", "MEIRAA", "EL-LOCORJ", "SalaminhoKBD", "nelio_ponto_dev", "CARNEIROOO", "Kowalski_PR", "Zacouteguy", "Sidors", "Takato_Matsuki", "cmm01", "Petrala", "Fumiga_BR"]
+players = ["Adrian-Wan", "MironoteuCool", "FabioEspeto", "Mamutag_Komander", "Robson_Foz", "MEIRAA", "EL-LOCORJ", "SalaminhoKBD", "nelio_ponto_dev", "CARNEIROOO", "Kowalski_PR", "Zacouteguy", "Sidors", "Takato_Matsuki", "cmm01", "Petrala", "Fumiga_BR", "O-CARRASCO"]
 
 def fazer_requisicao(url):
     for tentativa in range(3):
