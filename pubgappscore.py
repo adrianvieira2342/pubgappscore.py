@@ -10,11 +10,13 @@ st.set_page_config(
     page_icon="🎮"
 )
 
-# CSS para forçar a largura e ajustar visual
+# CSS para forçar largura total e remover espaços desnecessários
 st.markdown("""
     <style>
     .stDataFrame {width: 100%;}
     [data-testid="stMetricValue"] {font-size: 1.6rem !important;}
+    /* Remove o limite de altura do container interno da tabela */
+    [data-testid="stTable"] {overflow: visible !important;}
     </style>
     """, unsafe_allow_html=True)
 
@@ -53,11 +55,9 @@ def processar_ranking_completo(df_ranking, col_score):
 
     df_ranking['Pos'] = range(1, total + 1)
     df_ranking['nick'] = novos_nicks
-    df_ranking['Classificação'] = zonas
-
-    # Equalizando colunas: todas as abas terão exatamente estas colunas
-    cols_fixas = ['Pos', 'nick', 'partidas', 'kr', 'vitorias', 'kills', 'assists', 'revives', 'dano_medio']
     
+    # Colunas equalizadas para evitar scroll lateral
+    cols_fixas = ['Pos', 'nick', 'partidas', 'kr', 'vitorias', 'kills', 'assists', 'revives', 'dano_medio']
     if col_score not in cols_fixas:
         cols_fixas.append(col_score)
         
@@ -71,7 +71,7 @@ st.markdown("# 🎮 Ranking Squad - Season 40")
 df_bruto = get_data()
 
 if not df_bruto.empty:
-    # Correção de Tipos para Inteiros
+    # Tratamento de inteiros (remove .00)
     cols_int = ['partidas', 'vitorias', 'kills', 'assists', 'revives', 'dano_medio']
     for c in cols_int: 
         df_bruto[c] = pd.to_numeric(df_bruto[c], errors='coerce').fillna(0).astype(int)
@@ -85,7 +85,6 @@ if not df_bruto.empty:
         if "💩" in str(row['nick']): return ['background-color: #4d2600; color: white'] * len(row)
         return [''] * len(row)
 
-    # Formatação padronizada para todas as abas
     base_format = {
         'kr': "{:.2f}", 'partidas': "{:d}", 'vitorias': "{:d}", 
         'kills': "{:d}", 'assists': "{:d}", 'revives': "{:d}", 'dano_medio': "{:d}"
@@ -103,9 +102,12 @@ if not df_bruto.empty:
         fmt = base_format.copy()
         fmt[col_score] = "{:.2f}"
 
+        # height=None faz com que a tabela se expanda para mostrar todas as linhas
         st.dataframe(
             ranking_final.style.apply(highlight_zones, axis=1).format(fmt), 
-            use_container_width=True, hide_index=True
+            use_container_width=True, 
+            hide_index=True,
+            height=None 
         )
 
     with tab1:
@@ -115,13 +117,15 @@ if not df_bruto.empty:
     with tab3:
         renderizar_ranking(df_bruto.copy(), 'Score_Elite', (df_bruto['kr']*50)+((df_bruto['headshots'].fillna(0)/df_bruto['partidas_calc'])*60)+(df_bruto['dano_medio']/5))
     with tab4:
-        st.subheader("Métricas Gerais (Ordenado por Kills)")
+        st.subheader("Métricas Gerais")
         ranking_geral = processar_ranking_completo(df_bruto.copy(), 'kills')
         st.dataframe(
             ranking_geral.style.apply(highlight_zones, axis=1).format(base_format), 
-            use_container_width=True, hide_index=True
+            use_container_width=True, 
+            hide_index=True,
+            height=None
         )
 
-    st.markdown("<div style='text-align: center; color: gray; font-size: 0.8rem; padding-top: 20px;'>📊 By Adriano Vieira</div>", unsafe_allow_html=True)
+    st.markdown("<div style='text-align: center; color: gray; font-size: 0.8rem; padding: 40px;'>📊 By Adriano Vieira</div>", unsafe_allow_html=True)
 else:
     st.warning("Aguardando dados...")
