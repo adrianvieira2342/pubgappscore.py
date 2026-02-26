@@ -103,7 +103,7 @@ df_bruto = get_data()
 if not df_bruto.empty:
 
     # =============================
-    # MOSTRAR DATA DA ÚLTIMA ATUALIZAÇÃO
+    # MOSTRAR DATA DA ÚLTIMA ATUALIZAÇÃO (CORRIGIDO)
     # =============================
     if 'atualizado_em' in df_bruto.columns:
         df_bruto['atualizado_em'] = pd.to_datetime(df_bruto['atualizado_em'], errors='coerce')
@@ -111,12 +111,13 @@ if not df_bruto.empty:
         ultima_atualizacao = df_bruto['atualizado_em'].max()
 
         if pd.notnull(ultima_atualizacao):
-            # Converte de UTC para horário de Brasília
-            ultima_atualizacao = (
-                ultima_atualizacao
-                .tz_localize('UTC')
-                .tz_convert('America/Sao_Paulo')
-            )
+
+            # Se vier sem timezone, assume UTC
+            if ultima_atualizacao.tzinfo is None:
+                ultima_atualizacao = ultima_atualizacao.tz_localize('UTC')
+
+            # Converte para horário de Brasília
+            ultima_atualizacao = ultima_atualizacao.tz_convert('America/Sao_Paulo')
 
             st.info(
                 f"🕒 Última atualização dos dados: "
@@ -125,10 +126,13 @@ if not df_bruto.empty:
 
     st.markdown("---")
 
+    # =============================
+    # AJUSTE DE TIPOS
+    # =============================
     cols_inteiras = ['partidas', 'vitorias', 'kills', 'assists', 'headshots', 'revives', 'dano_medio']
     for col in cols_inteiras:
         df_bruto[col] = pd.to_numeric(df_bruto[col], errors='coerce').fillna(0).astype(int)
-    
+
     df_bruto = df_bruto[df_bruto['partidas'] > 0].copy()
     
     if df_bruto.empty:
@@ -155,11 +159,17 @@ if not df_bruto.empty:
 
             top1, top2, top3 = st.columns(3)
             with top1:
-                st.metric("🥇 1º Lugar", ranking_final.iloc[0]['nick'] if len(ranking_final) > 0 else "-", f"{ranking_final.iloc[0][col_score] if len(ranking_final) > 0 else 0} pts")
+                st.metric("🥇 1º Lugar",
+                          ranking_final.iloc[0]['nick'] if len(ranking_final) > 0 else "-",
+                          f"{ranking_final.iloc[0][col_score] if len(ranking_final) > 0 else 0} pts")
             with top2:
-                st.metric("🥈 2º Lugar", ranking_final.iloc[1]['nick'] if len(ranking_final) > 1 else "-", f"{ranking_final.iloc[1][col_score] if len(ranking_final) > 1 else 0} pts")
+                st.metric("🥈 2º Lugar",
+                          ranking_final.iloc[1]['nick'] if len(ranking_final) > 1 else "-",
+                          f"{ranking_final.iloc[1][col_score] if len(ranking_final) > 1 else 0} pts")
             with top3:
-                st.metric("🥉 3º Lugar", ranking_final.iloc[2]['nick'] if len(ranking_final) > 2 else "-", f"{ranking_final.iloc[2][col_score] if len(ranking_final) > 2 else 0} pts")
+                st.metric("🥉 3º Lugar",
+                          ranking_final.iloc[2]['nick'] if len(ranking_final) > 2 else "-",
+                          f"{ranking_final.iloc[2][col_score] if len(ranking_final) > 2 else 0} pts")
 
             format_dict = {
                 'kr': "{:.2f}", 'kill_dist_max': "{:.2f}", col_score: "{:.2f}",
