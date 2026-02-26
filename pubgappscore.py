@@ -1,65 +1,59 @@
 import streamlit as st
 import pandas as pd
+from datetime import datetime
 
-# =============================
-# CONFIGURAÇÃO E CSS
-# =============================
-st.set_page_config(page_title="PUBG Ranking", layout="wide")
+st.set_page_config(page_title="PUBG Ranking", layout="wide", page_icon="🎮")
 
+# Estilização da barra verde
 st.markdown("""
 <style>
     .stApp { background-color: #0e1117; color: white; }
     .sync-bar {
         background-color: #1a7f37;
         color: white;
-        padding: 10px;
+        padding: 12px;
         text-align: center;
         font-weight: bold;
-        border-radius: 5px;
+        border-radius: 20px;
         margin-bottom: 20px;
     }
 </style>
 """, unsafe_allow_html=True)
 
-# =============================
-# BUSCA DE DADOS
-# =============================
 def get_data():
     try:
         conn = st.connection("postgresql", type="sql", url=st.secrets["DATABASE_URL"])
-        # Buscamos a coluna como texto para o Streamlit não tentar converter fuso
-        query = "SELECT *, atualizado_em::text as data_fixa FROM ranking_squad"
+        # Forçamos o banco a nos entregar a data como texto puro
+        query = "SELECT *, atualizado_em::text as data_texto FROM ranking_squad"
         return conn.query(query, ttl=0)
     except Exception as e:
-        st.error(f"Erro: {e}")
+        st.error(f"Erro na conexão: {e}")
         return pd.DataFrame()
 
-# =============================
-# INTERFACE
-# =============================
 st.markdown("<h1 style='text-align:center;'>🎮 Ranking Squad - Season 40</h1>", unsafe_allow_html=True)
 
 df = get_data()
 
 if not df.empty:
-    # PEGA O HORÁRIO MAIS RECENTE DA COLUNA QUE CRIAMOS
-    # Como salvamos como texto no passo 1, aqui ele virá exato.
-    data_exibicao = df['data_fixa'].max()
+    # --- LOGICA DA BARRA ---
+    # Pegamos o valor máximo da coluna (o último que o GitHub enviou)
+    try:
+        horario_raw = df['data_texto'].max()
+        # Formata de AAAA-MM-DD para DD/MM/AAAA
+        dt_obj = datetime.strptime(horario_raw[:19], '%Y-%m-%d %H:%M:%S')
+        data_final = dt_obj.strftime('%d/%m/%Y %H:%M:%S')
+    except:
+        data_final = "Sincronizando..."
+
+    st.markdown(f'<div class="sync-bar">● Dados Sincronizados (Brasília): {data_final}</div>', unsafe_allow_html=True)
+    st.markdown("---")
+
+    # Filtro de jogadores com partidas
+    df = df[df['partidas'].fillna(0).astype(int) > 0].copy()
     
-    # Se o formato no banco for ISO (AAAA-MM-DD), ajustamos apenas a ordem visual
-    if "-" in data_exibicao:
-        try:
-            # Converte AAAA-MM-DD HH:MM:SS para DD/MM/AAAA HH:MM:SS
-            partes = data_exibicao.split(" ")
-            data_br = "/".join(partes[0].split("-")[::-1])
-            data_exibicao = f"{data_br} {partes[1][:8]}"
-        except:
-            pass
+    # Exibe um aviso simples para você testar se os dados subiram
+    st.write(f"Total de jogadores ativos: {len(df)}")
+    st.table(df[['nick', 'partidas', 'kr', 'score']].head(10)) # Mostra os 10 primeiros para teste
 
-    st.markdown(f'<div class="sync-bar">● Dados Sincronizados (Brasília): {data_exibicao}</div>', unsafe_allow_html=True)
-
-    # --- RESTO DO SEU CÓDIGO DE RANKING ---
-    # (Aba PRO, TEAM, ELITE etc)
-    st.success("Ranking carregado com sucesso!")
 else:
-    st.warning("Aguardando dados do banco...")
+    st.warning("O banco de dados está vazio ou desconectado.")
