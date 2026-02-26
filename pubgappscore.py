@@ -1,86 +1,65 @@
 import streamlit as st
 import pandas as pd
-from datetime import datetime
 
 # =============================
-# CONFIGURAÇÃO DA PÁGINA
+# CONFIGURAÇÃO E CSS
 # =============================
-st.set_page_config(
-    page_title="PUBG Squad Ranking",
-    layout="wide",
-    page_icon="🎮",
-    initial_sidebar_state="collapsed"
-)
+st.set_page_config(page_title="PUBG Ranking", layout="wide")
 
-# =============================
-# CSS CUSTOMIZADO
-# =============================
 st.markdown("""
 <style>
     .stApp { background-color: #0e1117; color: white; }
     .sync-bar {
         background-color: #1a7f37;
         color: white;
-        padding: 12px;
+        padding: 10px;
         text-align: center;
         font-weight: bold;
+        border-radius: 5px;
         margin-bottom: 20px;
-        border-radius: 4px;
     }
 </style>
 """, unsafe_allow_html=True)
 
 # =============================
-# CONEXÃO COM BANCO
+# BUSCA DE DADOS
 # =============================
 def get_data():
     try:
-        conn = st.connection(
-            "postgresql",
-            type="sql",
-            url=st.secrets["DATABASE_URL"]
-        )
-        # O SEGREDO: Forçamos o banco a enviar a data como TEXTO puro (::text)
-        # Isso impede que o Python tente "corrigir" o fuso horário sozinho
-        query = "SELECT *, atualizado_em::text as data_texto FROM ranking_squad"
-        df = conn.query(query, ttl=0)
-        return df
+        conn = st.connection("postgresql", type="sql", url=st.secrets["DATABASE_URL"])
+        # Buscamos a coluna como texto para o Streamlit não tentar converter fuso
+        query = "SELECT *, atualizado_em::text as data_fixa FROM ranking_squad"
+        return conn.query(query, ttl=0)
     except Exception as e:
-        st.error(f"Erro na conexão com o banco: {e}")
+        st.error(f"Erro: {e}")
         return pd.DataFrame()
 
 # =============================
-# INTERFACE PRINCIPAL
+# INTERFACE
 # =============================
 st.markdown("<h1 style='text-align:center;'>🎮 Ranking Squad - Season 40</h1>", unsafe_allow_html=True)
 
-df_bruto = get_data()
+df = get_data()
 
-if not df_bruto.empty:
-    # --- LÓGICA DE SINCRONIZAÇÃO ESTÁTICA ---
-    try:
-        # Pegamos o valor máximo da coluna de texto (o registro mais recente)
-        horario_banco = df_bruto['data_texto'].max()
-        
-        # Formatamos apenas para exibição visual brasileira
-        # Pegamos apenas os primeiros 19 caracteres para ignorar milissegundos
-        dt_obj = datetime.strptime(horario_banco[:19], '%Y-%m-%d %H:%M:%S')
-        data_exibicao = dt_obj.strftime('%d/%m/%Y %H:%M:%S')
-    except:
-        data_exibicao = "Aguardando sincronização..."
-
-    # Exibição da barra verde com o horário REAL gravado no banco
-    st.markdown(f"""
-        <div class="sync-bar">
-            ● Última Atualização do Banco: {data_exibicao}
-        </div>
-    """, unsafe_allow_html=True)
-
-    # (Início do seu processamento de ranking original)
-    df_bruto = df_bruto[df_bruto['partidas'].fillna(0).astype(int) > 0].copy()
+if not df.empty:
+    # PEGA O HORÁRIO MAIS RECENTE DA COLUNA QUE CRIAMOS
+    # Como salvamos como texto no passo 1, aqui ele virá exato.
+    data_exibicao = df['data_fixa'].max()
     
-    # ... (Restante do seu código para as abas PRO, TEAM e ELITE)
-    st.info("Dados carregados com sucesso. Navegue pelas abas acima.")
+    # Se o formato no banco for ISO (AAAA-MM-DD), ajustamos apenas a ordem visual
+    if "-" in data_exibicao:
+        try:
+            # Converte AAAA-MM-DD HH:MM:SS para DD/MM/AAAA HH:MM:SS
+            partes = data_exibicao.split(" ")
+            data_br = "/".join(partes[0].split("-")[::-1])
+            data_exibicao = f"{data_br} {partes[1][:8]}"
+        except:
+            pass
 
+    st.markdown(f'<div class="sync-bar">● Dados Sincronizados (Brasília): {data_exibicao}</div>', unsafe_allow_html=True)
+
+    # --- RESTO DO SEU CÓDIGO DE RANKING ---
+    # (Aba PRO, TEAM, ELITE etc)
+    st.success("Ranking carregado com sucesso!")
 else:
-    st.warning("Conectado ao banco. Nenhum dado encontrado na tabela 'ranking_squad'.")
+    st.warning("Aguardando dados do banco...")
