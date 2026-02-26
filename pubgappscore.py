@@ -44,17 +44,9 @@ def get_data():
             type="sql",
             url=st.secrets["DATABASE_URL"]
         )
-
-        query = """
-        SELECT *,
-               (MAX(atualizado_em) OVER() AT TIME ZONE 'America/Sao_Paulo') 
-               AS ultima_atualizacao
-        FROM ranking_squad
-        """
-
+        query = "SELECT * FROM ranking_squad"
         df = conn.query(query, ttl=0)
         return df
-
     except Exception as e:
         st.error(f"Erro na conexão com o banco: {e}")
         return pd.DataFrame()
@@ -105,37 +97,20 @@ def processar_ranking_completo(df_ranking, col_score):
 # INTERFACE
 # =============================
 st.markdown("<h1 style='text-align:center;'>🎮 Ranking Squad - Season 40</h1>", unsafe_allow_html=True)
+st.markdown("---")
 
 df_bruto = get_data()
 
 if not df_bruto.empty:
 
-    # =============================
-    # MOSTRAR ÚLTIMA ATUALIZAÇÃO REAL
-    # =============================
-    if 'ultima_atualizacao' in df_bruto.columns:
-        ultima_atualizacao = df_bruto['ultima_atualizacao'].iloc[0]
-
-        if pd.notnull(ultima_atualizacao):
-            ultima_atualizacao = pd.to_datetime(ultima_atualizacao)
-
-            st.info(
-                f"🕒 Última atualização da base de dados: "
-                f"{ultima_atualizacao.strftime('%d/%m/%Y às %H:%M:%S')} "
-                f"(Horário de Brasília)"
-            )
-
-    st.markdown("---")
-
-    # =============================
-    # AJUSTE DE TIPOS
-    # =============================
     cols_inteiras = ['partidas', 'vitorias', 'kills', 'assists', 'headshots', 'revives', 'dano_medio']
     for col in cols_inteiras:
         df_bruto[col] = pd.to_numeric(df_bruto[col], errors='coerce').fillna(0).astype(int)
-
+    
+    # --- AJUSTE SOLICITADO: Filtra apenas jogadores com 1 ou mais partidas ---
     df_bruto = df_bruto[df_bruto['partidas'] > 0].copy()
     
+    # Se após o filtro o DF ficar vazio, exibe aviso
     if df_bruto.empty:
         st.info("Nenhum jogador possui partidas registradas nesta temporada.")
     else:
@@ -160,17 +135,11 @@ if not df_bruto.empty:
 
             top1, top2, top3 = st.columns(3)
             with top1:
-                st.metric("🥇 1º Lugar",
-                          ranking_final.iloc[0]['nick'] if len(ranking_final) > 0 else "-",
-                          f"{ranking_final.iloc[0][col_score] if len(ranking_final) > 0 else 0} pts")
+                st.metric("🥇 1º Lugar", ranking_final.iloc[0]['nick'] if len(ranking_final) > 0 else "-", f"{ranking_final.iloc[0][col_score] if len(ranking_final) > 0 else 0} pts")
             with top2:
-                st.metric("🥈 2º Lugar",
-                          ranking_final.iloc[1]['nick'] if len(ranking_final) > 1 else "-",
-                          f"{ranking_final.iloc[1][col_score] if len(ranking_final) > 1 else 0} pts")
+                st.metric("🥈 2º Lugar", ranking_final.iloc[1]['nick'] if len(ranking_final) > 1 else "-", f"{ranking_final.iloc[1][col_score] if len(ranking_final) > 1 else 0} pts")
             with top3:
-                st.metric("🥉 3º Lugar",
-                          ranking_final.iloc[2]['nick'] if len(ranking_final) > 2 else "-",
-                          f"{ranking_final.iloc[2][col_score] if len(ranking_final) > 2 else 0} pts")
+                st.metric("🥉 3º Lugar", ranking_final.iloc[2]['nick'] if len(ranking_final) > 2 else "-", f"{ranking_final.iloc[2][col_score] if len(ranking_final) > 2 else 0} pts")
 
             format_dict = {
                 'kr': "{:.2f}", 'kill_dist_max': "{:.2f}", col_score: "{:.2f}",
