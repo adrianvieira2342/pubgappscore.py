@@ -13,18 +13,11 @@ st.set_page_config(
 )
 
 # =============================
-# CSS TEMA ESCURO CUSTOM
+# CSS CUSTOMIZADO
 # =============================
 st.markdown("""
 <style>
     .stApp { background-color: #0e1117; color: white; }
-    div[data-testid="stMetric"] {
-        background-color: #161b22;
-        padding: 15px;
-        border-radius: 12px;
-        border: 1px solid #30363d;
-        text-align: center;
-    }
     .sync-bar {
         background-color: #1a7f37;
         color: white;
@@ -32,6 +25,7 @@ st.markdown("""
         text-align: center;
         font-weight: bold;
         margin-bottom: 20px;
+        border-radius: 4px;
     }
 </style>
 """, unsafe_allow_html=True)
@@ -46,45 +40,47 @@ def get_data():
             type="sql",
             url=st.secrets["DATABASE_URL"]
         )
-        # Forçamos a coluna a vir como TEXTO puro para o Streamlit não mexer no fuso
-        query = "SELECT *, atualizado_em::text as data_estatica FROM ranking_squad"
+        # O SEGREDO: Forçamos o banco a enviar a data como TEXTO puro (::text)
+        # Isso impede que o Python tente "corrigir" o fuso horário sozinho
+        query = "SELECT *, atualizado_em::text as data_texto FROM ranking_squad"
         df = conn.query(query, ttl=0)
         return df
     except Exception as e:
-        st.error(f"Erro na conexão: {e}")
+        st.error(f"Erro na conexão com o banco: {e}")
         return pd.DataFrame()
 
 # =============================
-# INTERFACE
+# INTERFACE PRINCIPAL
 # =============================
 st.markdown("<h1 style='text-align:center;'>🎮 Ranking Squad - Season 40</h1>", unsafe_allow_html=True)
 
 df_bruto = get_data()
 
 if not df_bruto.empty:
-    # --- BUSCA O HORÁRIO REAL DO BANCO ---
+    # --- LÓGICA DE SINCRONIZAÇÃO ESTÁTICA ---
     try:
-        # Pega o valor máximo (mais recente) registrado na coluna de texto
-        ultima_data_banco = df_bruto['data_estatica'].max()
+        # Pegamos o valor máximo da coluna de texto (o registro mais recente)
+        horario_banco = df_bruto['data_texto'].max()
         
-        # Formata para o padrão visual brasileiro
-        dt_limpa = datetime.strptime(ultima_data_banco[:19], '%Y-%m-%d %H:%M:%S')
+        # Formatamos apenas para exibição visual brasileira
+        # Pegamos apenas os primeiros 19 caracteres para ignorar milissegundos
+        dt_obj = datetime.strptime(horario_banco[:19], '%Y-%m-%d %H:%M:%S')
         data_exibicao = dt_obj.strftime('%d/%m/%Y %H:%M:%S')
     except:
         data_exibicao = "Aguardando sincronização..."
 
-    # Barra Verde com o horário FIXO que veio do banco
+    # Exibição da barra verde com o horário REAL gravado no banco
     st.markdown(f"""
         <div class="sync-bar">
             ● Última Atualização do Banco: {data_exibicao}
         </div>
     """, unsafe_allow_html=True)
 
-    # (Início do Processamento de Ranking)
-    df_bruto = df_bruto[df_bruto['partidas'] > 0].copy()
-    # ... Resto do seu código de processamento de tabs e ranking ...
+    # (Início do seu processamento de ranking original)
+    df_bruto = df_bruto[df_bruto['partidas'].fillna(0).astype(int) > 0].copy()
     
-    st.info("Dados carregados com sucesso. Selecione uma aba acima para ver o ranking.")
+    # ... (Restante do seu código para as abas PRO, TEAM e ELITE)
+    st.info("Dados carregados com sucesso. Navegue pelas abas acima.")
 
 else:
-    st.warning("Sem dados para exibir.")
+    st.warning("Conectado ao banco. Nenhum dado encontrado na tabela 'ranking_squad'.")
