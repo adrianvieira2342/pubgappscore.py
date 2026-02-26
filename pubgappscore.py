@@ -44,9 +44,17 @@ def get_data():
             type="sql",
             url=st.secrets["DATABASE_URL"]
         )
-        query = "SELECT * FROM ranking_squad"
+
+        query = """
+        SELECT *,
+               (MAX(atualizado_em) OVER() AT TIME ZONE 'America/Sao_Paulo') 
+               AS ultima_atualizacao
+        FROM ranking_squad
+        """
+
         df = conn.query(query, ttl=0)
         return df
+
     except Exception as e:
         st.error(f"Erro na conexão com o banco: {e}")
         return pd.DataFrame()
@@ -103,25 +111,18 @@ df_bruto = get_data()
 if not df_bruto.empty:
 
     # =============================
-    # MOSTRAR DATA DA ÚLTIMA ATUALIZAÇÃO (CORRIGIDO)
+    # MOSTRAR ÚLTIMA ATUALIZAÇÃO REAL
     # =============================
-    if 'atualizado_em' in df_bruto.columns:
-        df_bruto['atualizado_em'] = pd.to_datetime(df_bruto['atualizado_em'], errors='coerce')
-
-        ultima_atualizacao = df_bruto['atualizado_em'].max()
+    if 'ultima_atualizacao' in df_bruto.columns:
+        ultima_atualizacao = df_bruto['ultima_atualizacao'].iloc[0]
 
         if pd.notnull(ultima_atualizacao):
-
-            # Se vier sem timezone, assume UTC
-            if ultima_atualizacao.tzinfo is None:
-                ultima_atualizacao = ultima_atualizacao.tz_localize('UTC')
-
-            # Converte para horário de Brasília
-            ultima_atualizacao = ultima_atualizacao.tz_convert('America/Sao_Paulo')
+            ultima_atualizacao = pd.to_datetime(ultima_atualizacao)
 
             st.info(
-                f"🕒 Última atualização dos dados: "
-                f"{ultima_atualizacao.strftime('%d/%m/%Y às %H:%M:%S')} (Horário de Brasília)"
+                f"🕒 Última atualização da base de dados: "
+                f"{ultima_atualizacao.strftime('%d/%m/%Y às %H:%M:%S')} "
+                f"(Horário de Brasília)"
             )
 
     st.markdown("---")
