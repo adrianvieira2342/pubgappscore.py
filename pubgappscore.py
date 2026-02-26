@@ -1,7 +1,6 @@
 import streamlit as st
 import pandas as pd
 from datetime import datetime
-import pytz
 
 # =============================
 # CONFIGURAÇÃO DA PÁGINA
@@ -114,22 +113,25 @@ df_bruto = get_data()
 
 if not df_bruto.empty:
     
-    # --- LOGICA DE SINCRONIZAÇÃO (CORREÇÃO DO HORÁRIO) ---
+    # --- LÓGICA DE SINCRONIZAÇÃO CORRIGIDA ---
     try:
-        # Pega a data mais recente da coluna 'atualizado_em'
-        ultima_sinc = pd.to_datetime(df_bruto['atualizado_em']).max()
+        # Pega o valor máximo (mais recente) da coluna
+        raw_val = df_bruto['atualizado_em'].max()
         
-        # Se a data vier do banco como UTC (fuso zero), convertemos para Brasília
-        if ultima_sinc.tzinfo is None:
-            ultima_sinc = ultima_sinc.tz_localize('UTC')
-        
-        fuso_br = pytz.timezone('America/Sao_Paulo')
-        ultima_sinc_br = ultima_sinc.astimezone(fuso_br)
-        data_formatada = ultima_sinc_br.strftime('%d/%m/%Y %H:%M:%S')
-    except:
+        # Converte para string e limpa o excesso para evitar cálculos de fuso do Python
+        # Se vier como string: '2026-02-25 23:44:00.123+00' -> vira '25/02/2026 23:44:00'
+        if isinstance(raw_val, str):
+            data_limpa = raw_val[:19] # Pega apenas YYYY-MM-DD HH:MM:SS
+            dt = datetime.strptime(data_limpa, '%Y-%m-%d %H:%M:%S')
+            data_formatada = dt.strftime('%d/%m/%Y %H:%M:%S')
+        else:
+            # Se o Pandas já converteu para datetime, formatamos direto sem converter timezone
+            data_formatada = raw_val.strftime('%d/%m/%Y %H:%M:%S')
+            
+    except Exception as e:
         data_formatada = "--/--/---- --:--:--"
 
-    # Exibe a tarja verde com o horário REAL do banco
+    # Exibe a tarja verde com o horário que ESTÁ no banco de dados
     st.markdown(f"""
         <div class="sync-bar">
             ● Dados Sincronizados (Brasília): {data_formatada}
@@ -138,11 +140,11 @@ if not df_bruto.empty:
     
     st.markdown("---")
 
+    # (O restante do processamento segue igual ao seu código original)
     cols_inteiras = ['partidas', 'vitorias', 'kills', 'assists', 'headshots', 'revives', 'dano_medio']
     for col in cols_inteiras:
         df_bruto[col] = pd.to_numeric(df_bruto[col], errors='coerce').fillna(0).astype(int)
     
-    # Filtra apenas jogadores com 1 ou mais partidas
     df_bruto = df_bruto[df_bruto['partidas'] > 0].copy()
     
     if df_bruto.empty:
@@ -181,7 +183,7 @@ if not df_bruto.empty:
                 'assists': "{:d}", 'headshots': "{:d}", 'revives': "{:d}", 'dano_medio': "{:d}"
             }
 
-            altura_dinamica = (len(ranking_final) * 35) + 120
+            altura_dinamica = (len(ranking_final) * 35) + 80
 
             st.dataframe(
                 ranking_final.style
