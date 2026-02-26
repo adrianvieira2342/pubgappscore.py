@@ -97,20 +97,40 @@ def processar_ranking_completo(df_ranking, col_score):
 # INTERFACE
 # =============================
 st.markdown("<h1 style='text-align:center;'>🎮 Ranking Squad - Season 40</h1>", unsafe_allow_html=True)
-st.markdown("---")
 
 df_bruto = get_data()
 
 if not df_bruto.empty:
 
+    # =============================
+    # MOSTRAR DATA DA ÚLTIMA ATUALIZAÇÃO
+    # =============================
+    if 'atualizado_em' in df_bruto.columns:
+        df_bruto['atualizado_em'] = pd.to_datetime(df_bruto['atualizado_em'], errors='coerce')
+
+        ultima_atualizacao = df_bruto['atualizado_em'].max()
+
+        if pd.notnull(ultima_atualizacao):
+            # Converte de UTC para horário de Brasília
+            ultima_atualizacao = (
+                ultima_atualizacao
+                .tz_localize('UTC')
+                .tz_convert('America/Sao_Paulo')
+            )
+
+            st.info(
+                f"🕒 Última atualização dos dados: "
+                f"{ultima_atualizacao.strftime('%d/%m/%Y às %H:%M:%S')} (Horário de Brasília)"
+            )
+
+    st.markdown("---")
+
     cols_inteiras = ['partidas', 'vitorias', 'kills', 'assists', 'headshots', 'revives', 'dano_medio']
     for col in cols_inteiras:
         df_bruto[col] = pd.to_numeric(df_bruto[col], errors='coerce').fillna(0).astype(int)
     
-    # --- AJUSTE SOLICITADO: Filtra apenas jogadores com 1 ou mais partidas ---
     df_bruto = df_bruto[df_bruto['partidas'] > 0].copy()
     
-    # Se após o filtro o DF ficar vazio, exibe aviso
     if df_bruto.empty:
         st.info("Nenhum jogador possui partidas registradas nesta temporada.")
     else:
