@@ -98,7 +98,7 @@ def processar_ranking_completo(df_ranking, col_score):
 # =============================
 # INTERFACE
 # =============================
-st.markdown("<h1 style='text-align:center;'>🎮 Ranking Squad - Season 40</h1>", unsafe_allow_html=True)
+st.markdown("<h1 style='text-align:left;'>🎮 PUBG Ranking Squad - Season 40</h1>", unsafe_allow_html=True)
 
 df_bruto = get_data()
 
@@ -108,7 +108,7 @@ if not df_bruto.empty:
         try:
             dt_raw = pd.to_datetime(df_bruto['ultima_atualizacao'].iloc[0])
             dt_formatada = dt_raw.strftime('%d/%m/%Y %H:%M')
-            st.markdown(f"<p style='text-align:center; color: #888;'>📅 Última atualização do banco: <b>{dt_formatada}</b></p>", unsafe_allow_html=True)
+            st.markdown(f"<p style='text-align:left; color: #888;'>📅 Última atualização do banco: <b>{dt_formatada}</b></p>", unsafe_allow_html=True)
         except:
             pass
 
