@@ -44,9 +44,10 @@ def get_data():
             type="sql",
             url=st.secrets["DATABASE_URL"]
         )
-        # APONTANDO PARA A VIEW QUE CRIAMOS
+        # Ajustamos o ttl para 0 ou um valor baixo (ex: 60 para 1 minuto)
+        # Isso força o Streamlit a ler o banco de novo em vez de usar o cache antigo
         query = "SELECT * FROM v_ranking_squad_completo"
-        df = conn.query(query, ttl=0)
+        df = conn.query(query, ttl=0) 
         return df
     except Exception as e:
         st.error(f"Erro na conexão com o banco: {e}")
