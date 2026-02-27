@@ -111,7 +111,7 @@ def processar_ranking_completo(df_ranking, col_score):
 # =============================
 # INTERFACE
 # =============================
-st.markdown("<h1 style='text-align:left;'>🎮 PUBG Ranking Squad - Season 40</h1>", unsafe_allow_html=True)
+st.markdown("<h1 style='text-align:left;'>🏆 PUBG Ranking Squad - Season 40</h1>", unsafe_allow_html=True)
 
 df_bruto = get_data()
 
