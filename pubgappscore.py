@@ -128,10 +128,25 @@ if not df_bruto.empty:
         df_bruto['partidas_calc'] = df_bruto['partidas'].replace(0, 1)
 
         tab1, tab2, tab3 = st.tabs([
-            "🔥 PRO (Equilibrado)", 
-            "🤝 TEAM (Suporte)", 
-            "🎯 ELITE (Skill)"
+            "🔥 PRO Player (Equilibrado)", 
+            "🤝 TEAM Player (Suporte)", 
+            "🎯 Atirador de Elite (Skill)"
         ])
+
+        with tab1:
+            st.info("**Fórmula PRO:** Valoriza o equilíbrio entre sobrevivência e agressividade. Foca em K/R alto, dano consistente e taxa de vitória.")
+            f_pro = (df_bruto['kr'] * 40) + (df_bruto['dano_medio'] / 8) + ((df_bruto['vitorias'] / df_bruto['partidas_calc']) * 500)
+            renderizar_ranking(df_bruto.copy(), 'Score_Pro', f_pro)
+
+        with tab2:
+            st.info("**Fórmula TEAM:** Foco total no jogo coletivo. Pontua mais quem revive aliados, dá assistências e garante a vitória para o squad.")
+            f_team = ((df_bruto['vitorias'] / df_bruto['partidas_calc']) * 1000) + ((df_bruto['revives'] / df_bruto['partidas_calc']) * 50) + ((df_bruto['assists'] / df_bruto['partidas_calc']) * 35)
+            renderizar_ranking(df_bruto.copy(), 'Score_Team', f_team)
+
+        with tab3:
+            st.info("**Fórmula ELITE:** O ranking dos 'troca-tiros'. Prioriza K/R, precisão de Headshots e volume de dano por partida.")
+            f_elite = (df_bruto['kr'] * 50) + ((df_bruto['headshots'] / df_bruto['partidas_calc']) * 60) + (df_bruto['dano_medio'] / 5)
+            renderizar_ranking(df_bruto.copy(), 'Score_Elite', f_elite)
 
         def highlight_zones(row):
             if row['Classificação'] == "Elite Zone":
