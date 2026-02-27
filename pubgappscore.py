@@ -27,6 +27,10 @@ st.markdown("""
         border: 1px solid #30363d;
         text-align: center;
     }
+    /* Aumenta o tamanho da medalha/emoji e do texto do rótulo */
+    label[data-testid="stMetricLabel"] {
+        font-size: 28px !important;
+    }
     div[data-testid="stTabs"] button {
         font-size: 16px;
         font-weight: bold;
