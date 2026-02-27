@@ -81,11 +81,12 @@ def processar_ranking_completo(df_ranking, col_score):
     df_ranking['nick'] = novos_nicks
     df_ranking['Classificação'] = zonas
 
+    # Mantemos os nomes minúsculos aqui para o Pandas não dar erro (KeyError)
     cols_base = [
-        'Pos', 'Classificação', 'Nickname',
-        'Partidas', 'kr', 'Vitórias',
-        'Kills', 'Assists', 'Headshots',
-        'Revives', 'kill_dist_max', 'Dano_Médio'
+        'Pos', 'Classificação', 'nick',
+        'partidas', 'kr', 'vitorias',
+        'kills', 'assists', 'headshots',
+        'revives', 'kill_dist_max', 'dano_medio'
     ]
     
     if col_score not in cols_base:
@@ -156,6 +157,7 @@ if not df_bruto.empty:
                 'assists': "{:d}", 'headshots': "{:d}", 'revives': "{:d}", 'dano_medio': "{:d}"
             }
             altura_dinamica = (len(ranking_final) * 35) + 80
+            
             st.dataframe(
                 ranking_final.style
                 .background_gradient(cmap='YlGnBu', subset=[col_score])
@@ -163,7 +165,23 @@ if not df_bruto.empty:
                 .format(format_dict),
                 use_container_width=True,
                 height=altura_dinamica,
-                hide_index=True
+                hide_index=True,
+                # MAPEAMENTO VISUAL DAS COLUNAS (Altera o nome sem quebrar a lógica)
+                column_config={
+                    "nick": "Nickname",
+                    "partidas": "Partidas",
+                    "kr": "K/R",
+                    "vitorias": "Vitórias",
+                    "kills": "Kills",
+                    "assists": "Assists",
+                    "headshots": "Headshots",
+                    "revives": "Revives",
+                    "kill_dist_max": "Kill Dist Máx",
+                    "dano_medio": "Dano Médio",
+                    "Score_Pro": "Score Pro",
+                    "Score_Team": "Score Team",
+                    "Score_Elite": "Score Elite"
+                }
             )
 
         # --- TABS ---
