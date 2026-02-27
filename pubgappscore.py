@@ -44,8 +44,6 @@ def get_data():
             type="sql",
             url=st.secrets["DATABASE_URL"]
         )
-        # Ajustamos o ttl para 0 ou um valor baixo (ex: 60 para 1 minuto)
-        # Isso força o Streamlit a ler o banco de novo em vez de usar o cache antigo
         query = "SELECT * FROM v_ranking_squad_completo"
         df = conn.query(query, ttl=0) 
         return df
@@ -103,18 +101,18 @@ st.markdown("<h1 style='text-align:left;'>🎮 PUBG Ranking Squad - Season 40</h
 df_bruto = get_data()
 
 if not df_bruto.empty:
-    # --- NOVO INFORMATIVO DE ATUALIZAÇÃO ---
+    # --- INFORMATIVO DE ATUALIZAÇÃO ---
     if 'ultima_atualizacao' in df_bruto.columns:
         try:
             dt_raw = pd.to_datetime(df_bruto['ultima_atualizacao'].iloc[0])
             dt_formatada = dt_raw.strftime('%d/%m/%Y %H:%M')
-            st.markdown(f"<p style='text-align:left; color: #888;'>📅 Última atualização do banco: <b>{dt_formatada}</b></p>", unsafe_allow_html=True)
+            st.markdown(f"<p style='text-align:left; color: #888; margin-top: -15px;'>📅 Última atualização do banco: <b>{dt_formatada}</b></p>", unsafe_allow_html=True)
         except:
             pass
 
     st.markdown("---")
 
-    # Garante que a conversão numérica não tente converter a coluna de data (que é string/datetime)
+    # Conversão numérica protegida
     cols_inteiras = ['partidas', 'vitorias', 'kills', 'assists', 'headshots', 'revives', 'dano_medio']
     for col in cols_inteiras:
         if col in df_bruto.columns:
@@ -127,27 +125,7 @@ if not df_bruto.empty:
     else:
         df_bruto['partidas_calc'] = df_bruto['partidas'].replace(0, 1)
 
-        tab1, tab2, tab3 = st.tabs([
-            "🔥 PRO Player (Equilibrado)", 
-            "🤝 TEAM Player (Suporte)", 
-            "🎯 Atirador de Elite (Skill)"
-        ])
-
-        with tab1:
-             f_pro = (df_bruto['kr'] * 40) + (df_bruto['dano_medio'] / 8) + ((df_bruto['vitorias'] / df_bruto['partidas_calc']) * 500)
-             # Adicione o texto aqui:
-             renderizar_ranking(df_bruto.copy(), 'Score_Pro', f_pro, "Valoriza o equilíbrio entre sobrevivência e agressividade. Foca em K/R alto, dano consistente e taxa de vitória.")
-
-        with tab2:
-            f_team = ((df_bruto['vitorias'] / df_bruto['partidas_calc']) * 1000) + ((df_bruto['revives'] / df_bruto['partidas_calc']) * 50) + ((df_bruto['assists'] / df_bruto['partidas_calc']) * 35)
-            # Adicione o texto aqui:
-            renderizar_ranking(df_bruto.copy(), 'Score_Team', f_team, "Foco total no jogo coletivo. Pontua mais quem revive aliados, dá assistências e garante a vitória.")
-
-        with tab3:
-            f_elite = (df_bruto['kr'] * 50) + ((df_bruto['headshots'] / df_bruto['partidas_calc']) * 60) + (df_bruto['dano_medio'] / 5)
-            # Adicione o texto aqui:
-            renderizar_ranking(df_bruto.copy(), 'Score_Elite', f_elite, "O ranking dos 'troca-tiros'. Prioriza K/R, precisão de Headshots e volume de dano.")
-
+        # --- FUNÇÕES DE SUPORTE À UI ---
         def highlight_zones(row):
             if row['Classificação'] == "Elite Zone":
                 return ['background-color: #003300; color: white; font-weight: bold'] * len(row)
@@ -155,10 +133,11 @@ if not df_bruto.empty:
                 return ['background-color: #4d0000; color: white; font-weight: bold'] * len(row)
             return [''] * len(row)
 
-        def renderizar_ranking(df_local, col_score, formula):
+        def renderizar_ranking(df_local, col_score, formula, explicacao):
             df_local[col_score] = formula.round(2)
             ranking_final = processar_ranking_completo(df_local, col_score)
 
+            # Métricas
             top1, top2, top3 = st.columns(3)
             with top1:
                 st.metric("🥇 1º Lugar", ranking_final.iloc[0]['nick'] if len(ranking_final) > 0 else "-", f"{ranking_final.iloc[0][col_score] if len(ranking_final) > 0 else 0} pts")
@@ -167,14 +146,16 @@ if not df_bruto.empty:
             with top3:
                 st.metric("🥉 3º Lugar", ranking_final.iloc[2]['nick'] if len(ranking_final) > 2 else "-", f"{ranking_final.iloc[2][col_score] if len(ranking_final) > 2 else 0} pts")
 
+            # Texto explicativo abaixo das métricas
+            st.markdown(f"<div style='background-color: #161b22; padding: 12px; border-radius: 8px; border-left: 5px solid #0078ff; margin-bottom: 20px; text-align: left;'>💡 {explicacao}</div>", unsafe_allow_html=True)
+
+            # Tabela
             format_dict = {
                 'kr': "{:.2f}", 'kill_dist_max': "{:.2f}", col_score: "{:.2f}",
                 'partidas': "{:d}", 'vitorias': "{:d}", 'kills': "{:d}", 
                 'assists': "{:d}", 'headshots': "{:d}", 'revives': "{:d}", 'dano_medio': "{:d}"
             }
-
             altura_dinamica = (len(ranking_final) * 35) + 80
-
             st.dataframe(
                 ranking_final.style
                 .background_gradient(cmap='YlGnBu', subset=[col_score])
@@ -185,17 +166,24 @@ if not df_bruto.empty:
                 hide_index=True
             )
 
+        # --- TABS ---
+        tab1, tab2, tab3 = st.tabs([
+            "🔥 PRO Player", 
+            "🤝 TEAM Player", 
+            "🎯 Atirador de Elite"
+        ])
+
         with tab1:
             f_pro = (df_bruto['kr'] * 40) + (df_bruto['dano_medio'] / 8) + ((df_bruto['vitorias'] / df_bruto['partidas_calc']) * 500)
-            renderizar_ranking(df_bruto.copy(), 'Score_Pro', f_pro)
+            renderizar_ranking(df_bruto.copy(), 'Score_Pro', f_pro, "Fórmula PRO: Valoriza o equilíbrio entre sobrevivência e agressividade. Foca em K/R alto, dano consistente e taxa de vitória.")
 
         with tab2:
             f_team = ((df_bruto['vitorias'] / df_bruto['partidas_calc']) * 1000) + ((df_bruto['revives'] / df_bruto['partidas_calc']) * 50) + ((df_bruto['assists'] / df_bruto['partidas_calc']) * 35)
-            renderizar_ranking(df_bruto.copy(), 'Score_Team', f_team)
+            renderizar_ranking(df_bruto.copy(), 'Score_Team', f_team, "Fórmula TEAM: Foco total no jogo coletivo. Pontua mais quem revive aliados, dá assistências e garante a vitória.")
 
         with tab3:
             f_elite = (df_bruto['kr'] * 50) + ((df_bruto['headshots'] / df_bruto['partidas_calc']) * 60) + (df_bruto['dano_medio'] / 5)
-            renderizar_ranking(df_bruto.copy(), 'Score_Elite', f_elite)
+            renderizar_ranking(df_bruto.copy(), 'Score_Elite', f_elite, "Fórmula ELITE: O ranking dos 'troca-tiros'. Prioriza K/R, precisão de Headshots e volume de dano.")
 
     st.markdown("---")
     st.markdown("<div style='text-align: center; color: gray; padding: 20px;'>📊 <b>By Adriano Vieira</b></div>", unsafe_allow_html=True)
