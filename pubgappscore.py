@@ -133,20 +133,20 @@ if not df_bruto.empty:
             "🎯 Atirador de Elite (Skill)"
         ])
 
-with tab1:
-    f_pro = (df_bruto['kr'] * 40) + (df_bruto['dano_medio'] / 8) + ((df_bruto['vitorias'] / df_bruto['partidas_calc']) * 500)
-    # Adicione o texto aqui:
-    renderizar_ranking(df_bruto.copy(), 'Score_Pro', f_pro, "Valoriza o equilíbrio entre sobrevivência e agressividade. Foca em K/R alto, dano consistente e taxa de vitória.")
+        with tab1:
+             f_pro = (df_bruto['kr'] * 40) + (df_bruto['dano_medio'] / 8) + ((df_bruto['vitorias'] / df_bruto['partidas_calc']) * 500)
+             # Adicione o texto aqui:
+             renderizar_ranking(df_bruto.copy(), 'Score_Pro', f_pro, "Valoriza o equilíbrio entre sobrevivência e agressividade. Foca em K/R alto, dano consistente e taxa de vitória.")
 
-with tab2:
-    f_team = ((df_bruto['vitorias'] / df_bruto['partidas_calc']) * 1000) + ((df_bruto['revives'] / df_bruto['partidas_calc']) * 50) + ((df_bruto['assists'] / df_bruto['partidas_calc']) * 35)
-    # Adicione o texto aqui:
-    renderizar_ranking(df_bruto.copy(), 'Score_Team', f_team, "Foco total no jogo coletivo. Pontua mais quem revive aliados, dá assistências e garante a vitória.")
+        with tab2:
+            f_team = ((df_bruto['vitorias'] / df_bruto['partidas_calc']) * 1000) + ((df_bruto['revives'] / df_bruto['partidas_calc']) * 50) + ((df_bruto['assists'] / df_bruto['partidas_calc']) * 35)
+            # Adicione o texto aqui:
+            renderizar_ranking(df_bruto.copy(), 'Score_Team', f_team, "Foco total no jogo coletivo. Pontua mais quem revive aliados, dá assistências e garante a vitória.")
 
-with tab3:
-    f_elite = (df_bruto['kr'] * 50) + ((df_bruto['headshots'] / df_bruto['partidas_calc']) * 60) + (df_bruto['dano_medio'] / 5)
-    # Adicione o texto aqui:
-    renderizar_ranking(df_bruto.copy(), 'Score_Elite', f_elite, "O ranking dos 'troca-tiros'. Prioriza K/R, precisão de Headshots e volume de dano.")
+        with tab3:
+            f_elite = (df_bruto['kr'] * 50) + ((df_bruto['headshots'] / df_bruto['partidas_calc']) * 60) + (df_bruto['dano_medio'] / 5)
+            # Adicione o texto aqui:
+            renderizar_ranking(df_bruto.copy(), 'Score_Elite', f_elite, "O ranking dos 'troca-tiros'. Prioriza K/R, precisão de Headshots e volume de dano.")
 
         def highlight_zones(row):
             if row['Classificação'] == "Elite Zone":
