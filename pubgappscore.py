@@ -31,14 +31,14 @@ st.markdown("""
         text-align: center;
     }
 
-    /* ESTE BLOCO FOI REFEITO PARA SER MAIS FORTE */
-    [data-testid="stMetricLabel"] > div {
+    /* FORÇA O TAMANHO DA MEDALHA E DO TEXTO "1º LUGAR" */
+    [data-testid="stMetricLabel"] * {
         font-size: 40px !important;
     }
-    
-    /* Garante que o emoji acompanhe o tamanho */
-    [data-testid="stMetricLabel"] span {
-        font-size: 40px !important;
+
+    /* AUMENTA O NICK DO JOGADOR PARA NÃO FICAR DESPROPORCIONAL */
+    [data-testid="stMetricValue"] {
+        font-size: 38px !important;
     }
 
     div[data-testid="stTabs"] button {
