@@ -14,6 +14,9 @@ st.set_page_config(
 # =============================
 # CSS TEMA ESCURO CUSTOM
 # =============================
+# =============================
+# CSS TEMA ESCURO CUSTOM
+# =============================
 st.markdown("""
 <style>
     .stApp {
@@ -27,10 +30,17 @@ st.markdown("""
         border: 1px solid #30363d;
         text-align: center;
     }
-    /* Aumenta o tamanho da medalha/emoji e do texto do rótulo */
-    label[data-testid="stMetricLabel"] {
+
+    /* ESTE BLOCO FOI REFEITO PARA SER MAIS FORTE */
+    [data-testid="stMetricLabel"] > div {
         font-size: 40px !important;
     }
+    
+    /* Garante que o emoji acompanhe o tamanho */
+    [data-testid="stMetricLabel"] span {
+        font-size: 40px !important;
+    }
+
     div[data-testid="stTabs"] button {
         font-size: 16px;
         font-weight: bold;
