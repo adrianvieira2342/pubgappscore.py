@@ -82,10 +82,10 @@ def processar_ranking_completo(df_ranking, col_score):
     df_ranking['Classificação'] = zonas
 
     cols_base = [
-        'Pos', 'Classificação', 'nick',
-        'partidas', 'kr', 'vitorias',
-        'kills', 'assists', 'headshots',
-        'revives', 'kill_dist_max', 'dano_medio'
+        'Pos', 'Classificação', 'Nickname',
+        'Partidas', 'kr', 'Vitórias',
+        'Kills', 'Assists', 'Headshots',
+        'Revives', 'kill_dist_max', 'Dano_Médio'
     ]
     
     if col_score not in cols_base:
