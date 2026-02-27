@@ -7,7 +7,7 @@ import pandas as pd
 st.set_page_config(
     page_title="PUBG Squad Ranking",
     layout="wide",
-    page_icon="🎮",
+    page_icon="🏆",
     initial_sidebar_state="collapsed"
 )
 
