@@ -22,71 +22,62 @@ players = [
     "Fumiga_BR", "O-CARRASCO"
 ]
 
-# ===============================
-# REQUISIÇÃO COM CONTROLE
-# ===============================
+# ==================================
+# REQUISIÇÃO COM CONTROLE DE RATE
+# ==================================
 
 def fazer_requisicao(url):
     for tentativa in range(3):
         res = requests.get(url, headers=headers)
 
         if res.status_code == 429:
-            retry_after = int(res.headers.get("Retry-After", 10))
-            print(f"⏳ Rate limit. Aguardando {retry_after}s...")
-            time.sleep(retry_after)
+            retry = int(res.headers.get("Retry-After", 10))
+            print(f"⏳ Rate limit... aguardando {retry}s")
+            time.sleep(retry)
             continue
 
         return res
-
     return None
 
-def dividir_lista(lista, tamanho):
-    for i in range(0, len(lista), tamanho):
-        yield lista[i:i + tamanho]
+# ==================================
+# DETECTAR TEMPORADA ATUAL
+# ==================================
 
-# ===============================
-# INÍCIO
-# ===============================
-
-inicio_total = time.time()
-print("🚀 Detectando temporada...")
-
+print("📅 Detectando temporada...")
 res_season = fazer_requisicao(f"{BASE_URL}/seasons")
 current_season_id = next(
-    (s["id"] for s in res_season.json()["data"]
-     if s["attributes"]["isCurrentSeason"]),
-    ""
+    s["id"] for s in res_season.json()["data"]
+    if s["attributes"]["isCurrentSeason"]
 )
 
-print(f"📅 Temporada atual: {current_season_id}")
+print("Temporada:", current_season_id)
 
-# ===============================
-# BUSCAR IDS EM LOTE
-# ===============================
+# ==================================
+# BUSCAR IDS
+# ==================================
 
-print("🔎 Buscando IDs em lote...")
 player_ids = {}
 
-for grupo in dividir_lista(players, 10):
-    nomes = ",".join(grupo)
-    res = fazer_requisicao(
-        f"{BASE_URL}/players?filter[playerNames]={nomes}"
-    )
-    if res and res.status_code == 200:
-        for p in res.json()["data"]:
-            player_ids[p["attributes"]["name"]] = p["id"]
+print("🔎 Buscando IDs...")
+res = fazer_requisicao(
+    f"{BASE_URL}/players?filter[playerNames]={','.join(players)}"
+)
 
-print(f"✅ {len(player_ids)} IDs encontrados.")
+for p in res.json()["data"]:
+    player_ids[p["attributes"]["name"]] = p["id"]
 
-# ===============================
+print("IDs encontrados:", len(player_ids))
+
+# ==================================
 # FUNÇÃO PRINCIPAL
-# ===============================
+# ==================================
 
 def buscar_stats(player, p_id):
-    print(f"🔎 Processando {player}")
+
+    print(f"🔎 {player}")
 
     res_player = fazer_requisicao(f"{BASE_URL}/players/{p_id}")
-    if not res_player or res_player.status_code != 200:
+    if not res_player:
         return None
 
     matches = res_player.json()["data"]["relationships"]["matches"]["data"]
@@ -100,59 +91,58 @@ def buscar_stats(player, p_id):
     max_kill_dist = 0
     partidas_validas = 0
 
-    for match in matches:
+    for m in matches:
 
-        match_id = match["id"]
+        match_id = m["id"]
         res_match = fazer_requisicao(f"{BASE_URL}/matches/{match_id}")
-        if not res_match or res_match.status_code != 200:
+        if not res_match:
             continue
 
         data = res_match.json()
-        attributes = data["data"]["attributes"]
+        attr = data["data"]["attributes"]
 
-        # Ignorar fora da temporada
-        if attributes.get("seasonId") != current_season_id:
+        # Apenas temporada atual
+        if attr.get("seasonId") != current_season_id:
             continue
 
-        # Ignorar se não for squad
-        if attributes.get("gameMode") != "squad":
+        # Apenas squad TPP
+        if attr.get("gameMode") != "squad":
             continue
 
         bots = 0
-        humanos = 0
-        stats_player = None
+        player_stats = None
 
-        for included in data["included"]:
-            if included["type"] == "participant":
-                stats = included["attributes"]["stats"]
+        for inc in data["included"]:
+            if inc["type"] == "participant":
+                stats = inc["attributes"]["stats"]
 
+                # Contar bots
                 if stats.get("playerId") == "ai":
                     bots += 1
-                else:
-                    humanos += 1
 
+                # Capturar stats do player
                 if stats.get("playerId") == p_id:
-                    stats_player = stats
+                    player_stats = stats
 
-        # 🔥 Detectar Casual (80+ bots)
+        # 🔥 DETECÇÃO DEFINITIVA DE CASUAL
         if bots >= 80:
-            print(f"❌ Casual detectado ({bots} bots) - ignorado")
+            print(f"❌ Casual removido ({bots} bots)")
             continue
 
-        if not stats_player:
+        if not player_stats:
             continue
 
         partidas_validas += 1
-        total_kills += stats_player.get("kills", 0)
-        total_assists += stats_player.get("assists", 0)
-        total_headshots += stats_player.get("headshotKills", 0)
-        total_revives += stats_player.get("revives", 0)
-        total_damage += stats_player.get("damageDealt", 0)
+        total_kills += player_stats.get("kills", 0)
+        total_assists += player_stats.get("assists", 0)
+        total_headshots += player_stats.get("headshotKills", 0)
+        total_revives += player_stats.get("revives", 0)
+        total_damage += player_stats.get("damageDealt", 0)
 
-        if stats_player.get("winPlace", 100) == 1:
+        if player_stats.get("winPlace") == 1:
             total_wins += 1
 
-        longest = stats_player.get("longestKill", 0)
+        longest = player_stats.get("longestKill", 0)
         if longest > max_kill_dist:
             max_kill_dist = longest
 
@@ -178,11 +168,9 @@ def buscar_stats(player, p_id):
         datetime.utcnow()
     )
 
-# ===============================
+# ==================================
 # EXECUÇÃO PARALELA
-# ===============================
-
-print("⚡ Buscando estatísticas em paralelo...")
+# ==================================
 
 resultados = []
 
@@ -193,48 +181,39 @@ with ThreadPoolExecutor(max_workers=4) as executor:
     ]
 
     for future in as_completed(futures):
-        resultado = future.result()
-        if resultado:
-            resultados.append(resultado)
+        r = future.result()
+        if r:
+            resultados.append(r)
 
-print(f"✅ {len(resultados)} jogadores com stats válidas.")
+# ==================================
+# ATUALIZAR BANCO
+# ==================================
 
-# ===============================
-# ATUALIZA BANCO
-# ===============================
+conn = psycopg2.connect(DATABASE_URL)
+cursor = conn.cursor()
 
-try:
-    conn = psycopg2.connect(DATABASE_URL)
-    cursor = conn.cursor()
+sql = """
+INSERT INTO ranking_squad
+(nick, partidas, kr, vitorias, kills, dano_medio,
+ assists, headshots, revives, kill_dist_max, atualizado_em)
+VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+ON CONFLICT (nick) DO UPDATE SET
+partidas=EXCLUDED.partidas,
+kr=EXCLUDED.kr,
+vitorias=EXCLUDED.vitorias,
+kills=EXCLUDED.kills,
+dano_medio=EXCLUDED.dano_medio,
+assists=EXCLUDED.assists,
+headshots=EXCLUDED.headshots,
+revives=EXCLUDED.revives,
+kill_dist_max=EXCLUDED.kill_dist_max,
+atualizado_em=EXCLUDED.atualizado_em
+"""
 
-    sql = """
-    INSERT INTO ranking_squad
-    (nick, partidas, kr, vitorias, kills, dano_medio,
-     assists, headshots, revives, kill_dist_max, atualizado_em)
-    VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
-    ON CONFLICT (nick) DO UPDATE SET
-    partidas=EXCLUDED.partidas,
-    kr=EXCLUDED.kr,
-    vitorias=EXCLUDED.vitorias,
-    kills=EXCLUDED.kills,
-    dano_medio=EXCLUDED.dano_medio,
-    assists=EXCLUDED.assists,
-    headshots=EXCLUDED.headshots,
-    revives=EXCLUDED.revives,
-    kill_dist_max=EXCLUDED.kill_dist_max,
-    atualizado_em=EXCLUDED.atualizado_em
-    """
+cursor.executemany(sql, resultados)
+conn.commit()
 
-    cursor.executemany(sql, resultados)
-    conn.commit()
+cursor.close()
+conn.close()
 
-    cursor.close()
-    conn.close()
-
-    print("💾 Banco atualizado com sucesso!")
-
-except Exception as e:
-    print(f"💥 Erro no banco: {e}")
-
-fim_total = time.time()
-print(f"⏱ Tempo total: {round(fim_total - inicio_total, 2)} segundos")
+print("💾 Banco atualizado!")
