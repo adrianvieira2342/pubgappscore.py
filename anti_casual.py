@@ -1,101 +1,83 @@
-import os
-import time
-import requests
-import psycopg2
-from concurrent.futures import ThreadPoolExecutor, as_completed
+def buscar_stats(player, p_id):
+    print(f"🔎 Processando {player}")
 
-DATABASE_URL = os.environ.get("DATABASE_URL")
-API_KEY = os.environ.get("PUBG_API_KEY")
-BASE_URL = "https://api.pubg.com/shards/steam"
-
-headers = {
-    "Authorization": f"Bearer {API_KEY}",
-    "Accept": "application/vnd.api+json"
-}
-
-def fazer_requisicao(url):
-    for _ in range(3):
-        r = requests.get(url, headers=headers)
-        if r.status_code == 429:
-            retry_after = int(r.headers.get("Retry-After", 10))
-            time.sleep(retry_after)
-            continue
-        return r
-    return None
-
-def jogador_tem_casual(player_name):
-    res = fazer_requisicao(f"{BASE_URL}/players?filter[playerNames]={player_name}")
-    if not res or res.status_code != 200:
-        return False
-
-    data = res.json()["data"]
-    if not data:
-        return False
-
-    p_id = data[0]["id"]
-
+    # 1️⃣ Buscar lista de partidas
     res_player = fazer_requisicao(f"{BASE_URL}/players/{p_id}")
     if not res_player or res_player.status_code != 200:
-        return False
+        return None
 
-    matches = res_player.json()["data"][0]["relationships"]["matches"]["data"]
+    matches = res_player.json()["data"]["relationships"]["matches"]["data"]
 
-    for match_ref in matches[:15]:
-        match_id = match_ref["id"]
+    total_kills = 0
+    total_wins = 0
+    total_assists = 0
+    total_headshots = 0
+    total_revives = 0
+    total_damage = 0
+    max_kill_dist = 0
+    partidas_validas = 0
+
+    for match in matches:
+
+        match_id = match["id"]
+
         res_match = fazer_requisicao(f"{BASE_URL}/matches/{match_id}")
-
         if not res_match or res_match.status_code != 200:
             continue
 
-        included = res_match.json().get("included", [])
-        participantes = [i for i in included if i["type"] == "participant"]
+        data = res_match.json()
+        attributes = data["data"]["attributes"]
 
-        bots = sum(
-            1 for p in participantes
-            if p["attributes"]["stats"].get("isBot", False)
-        )
+        # 2️⃣ Ignorar Casual
+        if attributes.get("matchType") == "casual":
+            continue
 
-        if bots >= 70:
-            print(f"🚫 Casual detectado: {player_name}")
-            return True
+        # 3️⃣ Ignorar se não for squad
+        if attributes.get("gameMode") != "squad":
+            continue
 
-    return False
+        # 4️⃣ Verificar se é da temporada atual
+        if attributes.get("seasonId") != current_season_id:
+            continue
 
-# =========================
-# EXECUÇÃO
-# =========================
+        # 5️⃣ Encontrar stats do player dentro da partida
+        for included in data["included"]:
+            if included["type"] == "participant":
+                stats = included["attributes"]["stats"]
+                if stats["playerId"] == p_id:
 
-conn = psycopg2.connect(DATABASE_URL)
-cursor = conn.cursor()
+                    partidas_validas += 1
+                    total_kills += stats.get("kills", 0)
+                    total_assists += stats.get("assists", 0)
+                    total_headshots += stats.get("headshotKills", 0)
+                    total_revives += stats.get("revives", 0)
+                    total_damage += stats.get("damageDealt", 0)
 
-cursor.execute("SELECT nick FROM ranking_squad")
-players = [row[0] for row in cursor.fetchall()]
+                    if stats.get("winPlace", 100) == 1:
+                        total_wins += 1
 
-def processar_player(player):
-    if jogador_tem_casual(player):
-        cursor.execute("""
-            UPDATE ranking_squad
-            SET partidas=0,
-                kr=0,
-                vitorias=0,
-                kills=0,
-                dano_medio=0,
-                assists=0,
-                headshots=0,
-                revives=0,
-                kill_dist_max=0,
-                atualizado_em=NOW()
-            WHERE nick=%s
-        """, (player,))
-        conn.commit()
-        print(f"❌ {player} zerado.")
+                    longest = stats.get("longestKill", 0)
+                    if longest > max_kill_dist:
+                        max_kill_dist = longest
 
-with ThreadPoolExecutor(max_workers=5) as executor:
-    futures = [executor.submit(processar_player, p) for p in players]
-    for _ in as_completed(futures):
-        pass
+    if partidas_validas == 0:
+        return None
 
-cursor.close()
-conn.close()
+    kr = round(total_kills / partidas_validas, 2)
+    dano_medio = int(total_damage / partidas_validas)
 
-print("✅ Filtro anti-casual finalizado.")
+    print(f"✅ {player} | {partidas_validas} partidas válidas")
+
+    return (
+        player,
+        partidas_validas,
+        kr,
+        total_wins,
+        total_kills,
+        dano_medio,
+        total_assists,
+        total_headshots,
+        total_revives,
+        max_kill_dist,
+        datetime.utcnow()
+    )
