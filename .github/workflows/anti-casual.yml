@@ -1,25 +1,23 @@
-name: Anti Casual Filter
+name: Anti-Casual Sync
 
 on:
   schedule:
-    - cron: '0 */6 * * *'
-  workflow_dispatch:
+    - cron: '0 */6 * * *' # Roda a cada 6 horas
+  workflow_dispatch: # Permite rodar manualmente
 
 jobs:
-  run-anti-casual:
+  build:
     runs-on: ubuntu-latest
-
     steps:
       - uses: actions/checkout@v3
-
-      - uses: actions/setup-python@v4
+      - name: Set up Python
+        uses: actions/setup-python@v4
         with:
-          python-version: '3.11'
-
-      - run: pip install requests psycopg2-binary
-
-      - name: Run Anti Casual
+          python-version: '3.9'
+      - name: Install dependencies
+        run: pip install requests psycopg2-binary
+      - name: Run Anti-Casual Script
         env:
-          DATABASE_URL: ${{ secrets.DATABASE_URL }}
           PUBG_API_KEY: ${{ secrets.PUBG_API_KEY }}
+          DATABASE_URL: ${{ secrets.DATABASE_URL }}
         run: python anti_casual.py
