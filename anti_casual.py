@@ -68,6 +68,7 @@ def processar_player(conn, player_name, player_id):
                 # Cálculo do KR e Score
                 score_penalidade = (kills * 10) + (dano * 0.1)
 
+                # UPDATE COMPLETO COM CÁLCULO DE KR CORRIGIDO
                 cur.execute("""
                     UPDATE ranking_bot SET
                         partidas = partidas + 1,
@@ -79,7 +80,8 @@ def processar_player(conn, player_name, player_id):
                         headshots = headshots + %s,
                         revives = revives + %s,
                         kill_dist_max = GREATEST(kill_dist_max, %s),
-                        kr = CAST((kills) AS FLOAT) / NULLIF(partidas + 1, 0),
+                        -- Forçamos a conversão para FLOAT para não arredondar para zero
+                        kr = ABS(CAST(kills - %s AS FLOAT) / NULLIF(partidas + 1, 0)),
                         atualizado_em = NOW()
                     WHERE nick = %s
                 """, (
@@ -89,6 +91,7 @@ def processar_player(conn, player_name, player_id):
                     p_stats.get("headshotKills", 0),
                     p_stats.get("revives", 0),
                     p_stats.get("longestKill", 0),
+                    kills, # valor usado para o cálculo do KR
                     player_name
                 ))
                 penalidades += 1
