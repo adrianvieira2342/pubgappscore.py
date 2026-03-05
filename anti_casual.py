@@ -108,16 +108,16 @@ if __name__ == "__main__":
         conn = psycopg2.connect(DATABASE_URL)
         
         # --- PASSO IMPORTANTE: LIMPANDO O HISTÓRICO PARA REPROCESSAR ---
-        print("🧹 Limpando dados antigos para atualizar colunas...")
-        with conn.cursor() as c:
-            c.execute("DELETE FROM matches_processadas;")
-            c.execute("""
-                UPDATE ranking_bot SET 
-                partidas=0, vitorias=0, kills=0, score=0, 
-                dano_medio=0, assists=0, headshots=0, 
-                revives=0, kill_dist_max=0, kr=0;
-            """)
-        conn.commit()
+        #print("🧹 Limpando dados antigos para atualizar colunas...")
+        #with conn.cursor() as c:
+        #    c.execute("DELETE FROM matches_processadas;")
+        #    c.execute("""
+        #        UPDATE ranking_bot SET 
+        #        partidas=0, vitorias=0, kills=0, score=0, 
+        #        dano_medio=0, assists=0, headshots=0, 
+        #        revives=0, kill_dist_max=0, kr=0;
+        #    """)
+        #conn.commit()
 
         for name, pid in PLAYERS.items():
             processar_player(conn, name, pid)
