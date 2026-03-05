@@ -142,10 +142,23 @@ if not df_bruto.empty:
         
         ranking_final = processar_ranking_completo(df_local, col_score)
 
+     # Métricas (Cards de Top 1, 2 e 3) com proteção contra falta de jogadores
         top1, top2, top3 = st.columns(3)
-        with top1: st.metric("🥇 1º Lugar", ranking_final.iloc[0]['nick'] if len(ranking_final) > 0 else "-", f"{ranking_final.iloc[0][col_score]:.2f} pts")
-        with top2: st.metric("🥈 2º Lugar", ranking_final.iloc[1]['nick'] if len(ranking_final) > 1 else "-", f"{ranking_final.iloc[1][col_score]:.2f} pts")
-        with top3: st.metric("🥉 3º Lugar", ranking_final.iloc[2]['nick'] if len(ranking_final) > 2 else "-", f"{ranking_final.iloc[2][col_score]:.2f} pts")
+        
+        with top1:
+            nome = ranking_final.iloc[0]['nick'] if len(ranking_final) > 0 else "-"
+            valor = f"{ranking_final.iloc[0][col_score]:.2f} pts" if len(ranking_final) > 0 else "0.00 pts"
+            st.metric("🥇 1º Lugar", nome, valor)
+            
+        with top2:
+            nome = ranking_final.iloc[1]['nick'] if len(ranking_final) > 1 else "-"
+            valor = f"{ranking_final.iloc[1][col_score]:.2f} pts" if len(ranking_final) > 1 else "0.00 pts"
+            st.metric("🥈 2º Lugar", nome, valor)
+            
+        with top3:
+            nome = ranking_final.iloc[2]['nick'] if len(ranking_final) > 2 else "-"
+            valor = f"{ranking_final.iloc[2][col_score]:.2f} pts" if len(ranking_final) > 2 else "0.00 pts"
+            st.metric("🥉 3º Lugar", nome, valor)
 
         st.markdown(f"<div style='background-color: #161b22; padding: 12px; border-radius: 8px; border-left: 5px solid #0078ff; margin-bottom: 20px; text-align: left;'>💡 {explicacao}</div>", unsafe_allow_html=True)
 
