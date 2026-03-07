@@ -8,24 +8,18 @@ st.set_page_config(
     page_title="PUBG Squad Ranking",
     layout="wide",
     page_icon="🏆",
-    initial_sidebar_state="expanded"
+    initial_sidebar_state="expanded" # Deixei expandido para você ver a nova barra
 )
 
 # =============================
-# CSS TEMA ESCURO CUSTOM (ORIGINAL)
+# CSS TEMA ESCURO CUSTOM
 # =============================
 st.markdown("""
 <style>
-    .stApp {
-        background-color: #0e1117;
-        color: white;
-    }
+    .stApp { background-color: #0e1117; color: white; }
     div[data-testid="stMetric"] {
-        background-color: #161b22;
-        padding: 15px;
-        border-radius: 12px;
-        border: 1px solid #30363d;
-        text-align: center;
+        background-color: #161b22; padding: 15px; border-radius: 12px;
+        border: 1px solid #30363d; text-align: center;
     }
     [data-testid="stMetricLabel"] * { font-size: 40px !important; }
     [data-testid="stMetricValue"] { font-size: 38px !important; }
@@ -34,57 +28,41 @@ st.markdown("""
 """, unsafe_allow_html=True)
 
 # =============================
-# CONEXÃO E FUNÇÕES DE BANCO
+# CONEXÃO COM BANCO
 # =============================
-def get_conn():
-    return st.connection("postgresql", type="sql", url=st.secrets["DATABASE_URL"])
-
-def get_data(table_name):
+def get_data(table_name="v_ranking_squad_completo"):
     try:
-        conn = get_conn()
+        conn = st.connection("postgresql", type="sql", url=st.secrets["DATABASE_URL"])
         query = f"SELECT * FROM {table_name}"
-        return conn.query(query, ttl=0)
-    except Exception:
+        df = conn.query(query, ttl=0) 
+        return df
+    except Exception as e:
+        st.error(f"Erro na conexão com o banco: {e}")
         return pd.DataFrame()
 
 # =============================
-# BARRA LATERAL: SOLICITAÇÃO E ADMIN
+# BARRA LATERAL - SOLICITAÇÃO (NOVO)
 # =============================
 with st.sidebar:
-    st.title("Settings")
-    
-    # 1. Formulário de Solicitação para Usuários
     st.markdown("### 📝 Solicitar Entrada")
-    with st.form("form_adesao", clear_on_submit=True):
-        novo_nick = st.text_input("Nickname no PUBG")
-        submit = st.form_submit_button("Enviar Pedido")
-        if submit and novo_nick:
+    st.info("Digite seu Nick para entrar no monitoramento.")
+    with st.form("form_novo_player", clear_on_submit=True):
+        input_nick = st.text_input("Nickname PUBG")
+        btn_enviar = st.form_submit_button("Enviar Pedido")
+        
+        if btn_enviar and input_nick:
             try:
-                conn = get_conn()
+                conn = st.connection("postgresql", type="sql", url=st.secrets["DATABASE_URL"])
                 with conn.session as s:
-                    s.execute("INSERT INTO jogadores_monitorados (nick, status) VALUES (:n, 'pendente') ON CONFLICT DO NOTHING", {"n": novo_nick})
+                    # Apenas insere na tabela de controle, não mexe no ranking
+                    s.execute(
+                        "INSERT INTO jogadores_monitorados (nick, status) VALUES (:n, 'pendente') ON CONFLICT (nick) DO NOTHING",
+                        {"n": input_nick}
+                    )
                     s.commit()
-                st.success("Pedido enviado ao Admin!")
-            except: st.error("Erro ao enviar.")
-
-    st.markdown("---")
-    
-    # 2. Área do Administrador (Aprovação)
-    st.markdown("### 🔑 Área do Admin")
-    senha_admin = st.text_input("Senha Admin", type="password")
-    if senha_admin == "SUA_SENHA_AQUI": # Altere para sua senha de preferência
-        st.info("Pedidos Pendentes:")
-        df_pendentes = get_data("jogadores_monitorados")
-        if not df_pendentes.empty:
-            pendentes = df_pendentes[df_pendentes['status'] == 'pendente']
-            for p in pendentes['nick']:
-                col_n, col_b = st.columns([2, 1])
-                col_n.text(p)
-                if col_b.button("✅", key=f"app_{p}"):
-                    with get_conn().session as s:
-                        s.execute("UPDATE jogadores_monitorados SET status = 'ativo' WHERE nick = :n", {"n": p})
-                        s.commit()
-                    st.rerun()
+                st.success(f"Pedido de {input_nick} enviado!")
+            except Exception as e:
+                st.error("Erro: A tabela 'jogadores_monitorados' ainda não existe ou está inacessível.")
 
 # =============================
 # PROCESSAMENTO DO RANKING (ORIGINAL)
@@ -92,19 +70,28 @@ with st.sidebar:
 def processar_ranking_completo(df_ranking, col_score):
     total = len(df_ranking)
     novos_nicks, zonas = [], []
-    is_bot = col_score == 'score'
-    df_ranking = df_ranking.sort_values(by=col_score, ascending=is_bot).reset_index(drop=True)
+    is_bot_ranking = col_score == 'score'
+    df_ranking = df_ranking.sort_values(by=col_score, ascending=is_bot_ranking).reset_index(drop=True)
 
     for i, row in df_ranking.iterrows():
         pos = i + 1
-        nick = str(row['nick']).replace("💀", "").replace("💩", "").replace("👤", "").strip()
-        if pos <= 3: novos_nicks.append(f"💀 {nick}"); zonas.append("Elite Zone")
-        elif pos > (total - 3): novos_nicks.append(f"💩 {nick}"); zonas.append("Cocô Zone")
-        else: novos_nicks.append(f"👤 {nick}"); zonas.append("Medíocre Zone")
+        nick_limpo = str(row['nick'])
+        for emoji in ["💀", "💩", "👤"]:
+            nick_limpo = nick_limpo.replace(emoji, "").strip()
+
+        if pos <= 3:
+            novos_nicks.append(f"💀 {nick_limpo}"); zonas.append("Elite Zone")
+        elif pos > (total - 3):
+            novos_nicks.append(f"💩 {nick_limpo}"); zonas.append("Cocô Zone")
+        else:
+            novos_nicks.append(f"👤 {nick_limpo}"); zonas.append("Medíocre Zone")
 
     df_ranking['Pos'] = range(1, total + 1)
     df_ranking['nick'], df_ranking['Classificação'] = novos_nicks, zonas
-    return df_ranking
+
+    cols_base = ['Pos', 'Classificação', 'nick', 'partidas', 'kr', 'vitorias', 'kills', 'assists', 'headshots', 'revives', 'kill_dist_max', 'dano_medio']
+    if col_score not in cols_base: cols_base.append(col_score)
+    return df_ranking[cols_base]
 
 # =============================
 # INTERFACE PRINCIPAL
@@ -115,7 +102,15 @@ df_bruto = get_data("v_ranking_squad_completo")
 df_bots_raw = get_data("ranking_bot")
 
 if not df_bruto.empty:
-    # Lógica de Subtração Anti-Casual
+    if 'ultima_atualizacao' in df_bruto.columns:
+        try:
+            dt_raw = pd.to_datetime(df_bruto['ultima_atualizacao'].iloc[0])
+            st.markdown(f"<p style='text-align:left; color: #888; margin-top: -15px;'>📅 Última atualização: <b>{dt_raw.strftime('%d/%m/%Y %H:%M')}</b></p>", unsafe_allow_html=True)
+        except: pass
+
+    st.markdown("---")
+
+    # Lógica de Subtração (Ajustada para segurança)
     cols_calc = ['partidas', 'vitorias', 'kills', 'assists', 'headshots', 'revives', 'dano_medio']
     for col in cols_calc:
         df_bruto[col] = pd.to_numeric(df_bruto[col], errors='coerce').fillna(0)
@@ -129,44 +124,57 @@ if not df_bruto.empty:
                 for col in ['partidas', 'vitorias', 'kills', 'assists', 'headshots', 'revives']:
                     v_total = df_bruto.loc[df_bruto['nick'] == nick_bot, col].values[0]
                     df_bruto.loc[df_bruto['nick'] == nick_bot, col] = max(0, v_total - abs(row_bot[col]))
+                
                 p_limpas = max(1, df_bruto.loc[df_bruto['nick'] == nick_bot, 'partidas'].values[0])
-                df_bruto.loc[df_bruto['nick'] == nick_bot, 'kr'] = df_bruto.loc[df_bruto['nick'] == nick_bot, 'kills'].values[0] / p_limpas
+                k_limpas = df_bruto.loc[df_bruto['nick'] == nick_bot, 'kills'].values[0]
+                df_bruto.loc[df_bruto['nick'] == nick_bot, 'kr'] = k_limpas / p_limpas
 
     for col in cols_calc: df_bruto[col] = df_bruto[col].astype(int)
 
-    # Renderização
+    def highlight_zones(row):
+        if row['Classificação'] == "Elite Zone": return ['background-color: #003300; color: white; font-weight: bold'] * len(row)
+        if row['Classificação'] == "Cocô Zone": return ['background-color: #4d0000; color: white; font-weight: bold'] * len(row)
+        return [''] * len(row)
+
     def renderizar_ranking(df_local, col_score, formula, explicacao):
         if formula is not None: df_local[col_score] = formula.round(2)
         ranking_final = processar_ranking_completo(df_local, col_score)
-        
-        # Cards de Topo
-        t1, t2, t3 = st.columns(3)
-        for i, col in enumerate([t1, t2, t3]):
+
+        top1, top2, top3 = st.columns(3)
+        for i, card in enumerate([top1, top2, top3]):
             if len(ranking_final) > i:
-                col.metric(f"{i+1}º Lugar", ranking_final.iloc[i]['nick'], f"{ranking_final.iloc[i][col_score]:.2f} pts")
+                with card: st.metric(f"{i+1}º Lugar", ranking_final.iloc[i]['nick'], f"{ranking_final.iloc[i][col_score]:.2f} pts")
 
         st.markdown(f"<div style='background-color: #161b22; padding: 12px; border-radius: 8px; border-left: 5px solid #0078ff; margin-bottom: 20px;'>💡 {explicacao}</div>", unsafe_allow_html=True)
 
-        # Formatação Anti-Casual (Sinal de menos)
         if col_score == 'score':
-            fmt = {c: (lambda x: f"- {int(abs(x))}" if isinstance(x, (int, float)) and c != 'kr' else f"- {abs(x):.2f}") for c in cols_calc + ['kr', 'kill_dist_max']}
-            fmt[col_score] = "{:.2f}"
+            format_dict = {c: (lambda x: f"- {int(abs(x))}" if c != 'kr' else f"- {abs(x):.2f}") for c in cols_calc + ['kr', 'kill_dist_max']}
+            format_dict[col_score] = "{:.2f}"
         else:
-            fmt = {c: "{:d}" for c in cols_calc}; fmt.update({'kr': "{:.2f}", 'kill_dist_max': "{:.2f}", col_score: "{:.2f}"})
+            format_dict = {c: "{:d}" for c in cols_calc}
+            format_dict.update({'kr': "{:.2f}", 'kill_dist_max': "{:.2f}", col_score: "{:.2f}"})
 
-        st.dataframe(ranking_final.style.background_gradient(cmap='YlGnBu' if col_score != 'score' else 'RdYlGn', subset=[col_score]).format(fmt), use_container_width=True, hide_index=True)
+        st.dataframe(
+            ranking_final.style
+            .background_gradient(cmap='YlGnBu' if col_score != 'score' else 'RdYlGn', subset=[col_score])
+            .apply(highlight_zones, axis=1)
+            .format(format_dict),
+            use_container_width=True, hide_index=True,
+            column_config={"nick": "Nickname", "partidas": "Partidas", "kr": "K/R", "vitorias": "Vitórias", "kills": "Kills", "assists": "Assists", "headshots": "Headshots", "revives": "Revives", "kill_dist_max": "Kill Dist Máx", "dano_medio": "Dano Médio", "score": "Penalidade"}
+        )
 
-    # Tabs
-    tab1, tab2, tab3, tab4 = st.tabs(["🔥 PRO Player", "🤝 TEAM Player", "🎯 Atirador de Elite", "🤖 Anti-Casual"])
-    df_v = df_bruto[df_bruto['partidas'] > 0].copy()
-    p_c = df_v['partidas'].replace(0, 1)
+    tab1, tab2, tab3, tab4 = st.tabs(["🔥 PRO Player", "🤝 TEAM Player", "🎯 Atirador de Elite", "🤖 Bot Detector"])
+    df_valid = df_bruto[df_bruto['partidas'] > 0].copy()
+    p_calc = df_valid['partidas'].replace(0, 1)
 
-    with tab1: renderizar_ranking(df_v.copy(), 'Score_Pro', (df_v['kr']*40)+(df_v['dano_medio']/8)+((df_v['vitorias']/p_c)*500), "Fórmula PRO Player")
-    with tab2: renderizar_ranking(df_v.copy(), 'Score_Team', ((df_v['vitorias']/p_c)*1000)+((df_v['revives']/p_c)*50), "Fórmula TEAM Player")
-    with tab3: renderizar_ranking(df_v.copy(), 'Score_Elite', (df_v['kr']*50)+((df_v['headshots']/p_c)*60), "Fórmula Atirador de Elite")
+    with tab1: renderizar_ranking(df_valid.copy(), 'Score_Pro', (df_valid['kr']*40)+(df_valid['dano_medio']/8)+((df_valid['vitorias']/p_calc)*500), "Fórmula PRO Player")
+    with tab2: renderizar_ranking(df_valid.copy(), 'Score_Team', ((df_valid['vitorias']/p_calc)*1000)+((df_valid['revives']/p_calc)*50)+((df_valid['assists']/p_calc)*35), "Fórmula TEAM Player")
+    with tab3: renderizar_ranking(df_valid.copy(), 'Score_Elite', (df_valid['kr']*50)+((df_valid['headshots']/p_calc)*60)+(df_valid['dano_medio']/5), "Fórmula ELITE Player")
     with tab4: 
-        if not df_bots_raw.empty: renderizar_ranking(df_bots_raw[df_bots_raw['partidas']>0].copy(), 'score', None, "Estatísticas removidas (Bots)")
+        if not df_bots_raw.empty:
+            renderizar_ranking(df_bots_raw[df_bots_raw['partidas']>0].copy(), 'score', None, "Anti-Casual: Penalidades registradas.")
 
+    st.markdown("---")
     st.markdown("<div style='text-align: center; color: gray; padding: 20px;'>📊 <b>By Adriano Vieira</b></div>", unsafe_allow_html=True)
 else:
-    st.warning("Aguardando dados...")
+    st.warning("Conectado ao banco. Aguardando dados...")
