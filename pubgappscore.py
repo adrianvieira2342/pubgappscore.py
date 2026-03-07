@@ -1,6 +1,7 @@
 import streamlit as st
 import pandas as pd
 import requests
+from sqlalchemy import text # Necessário para as versões novas do SQLAlchemy
 
 # =============================
 # CONFIGURAÇÃO DA PÁGINA (ORIGINAL)
@@ -13,10 +14,10 @@ st.set_page_config(
 )
 
 # =============================
-# FUNÇÃO TELEGRAM (ADICIONADA)
+# FUNÇÃO TELEGRAM (CONFIGURAÇÃO)
 # =============================
 def enviar_telegram(nick):
-    # INSERIR SEUS DADOS AQUI:
+    # INSIRA SEUS DADOS AQUI PARA RECEBER O AVISO NO CELULAR
     token = "SEU_TOKEN_AQUI" 
     chat_id = "SEU_CHAT_ID_AQUI" 
     
@@ -167,9 +168,9 @@ if not df_bruto.empty:
         if not df_bots_raw.empty:
             renderizar_ranking(df_bots_raw[df_bots_raw['partidas']>0].copy(), 'score', None, "Anti-Casual: Penalidades aplicadas.")
 
-    # =============================
-    # RODAPÉ: SOLICITAÇÃO + CRÉDITO
-    # =============================
+    # ===============================================
+    # RODAPÉ: SOLICITAÇÃO + CRÉDITO (ADRIANO VIEIRA)
+    # ===============================================
     st.markdown("---")
     with st.expander("📝 Solicitar inclusão no Ranking"):
         c_f, c_i = st.columns([1, 1])
@@ -180,13 +181,23 @@ if not df_bruto.empty:
                     try:
                         conn = st.connection("postgresql", type="sql", url=st.secrets["DATABASE_URL"])
                         with conn.session as s:
-                            s.execute("INSERT INTO jogadores_monitorados (nick, status) VALUES (:n, 'pendente') ON CONFLICT (nick) DO NOTHING", {"n": n_nick})
+                            # CORREÇÃO: Usando text() para declarar a query SQL explicitamente
+                            query_sql = text("""
+                                INSERT INTO jogadores_monitorados (nick, status) 
+                                VALUES (:n, 'pendente') 
+                                ON CONFLICT (nick) DO NOTHING
+                            """)
+                            s.execute(query_sql, {"n": n_nick})
                             s.commit()
+                        
+                        # Dispara o Telegram logo após gravar no banco
                         enviar_telegram(n_nick)
                         st.success(f"Solicitação enviada! Admin notificado.")
-                    except Exception as e: st.error(f"Erro no banco: {e}")
+                    except Exception as e: 
+                        st.error(f"Erro no banco: {e}")
         with c_i: st.markdown("<p style='color: gray; font-size: 14px; margin-top: 20px;'>A análise de novos players é feita manualmente pelo administrador.</p>", unsafe_allow_html=True)
 
+    # Crédito centralizado no rodapé
     st.markdown("<div style='text-align: center; color: gray; padding: 20px;'>📊 <b>By Adriano Vieira</b></div>", unsafe_allow_html=True)
 else:
-    st.warning("Aguardando dados...")
+    st.warning("Conectado ao banco. Aguardando dados...")
