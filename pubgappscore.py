@@ -17,14 +17,18 @@ st.set_page_config(
 # FUNÇÃO TELEGRAM (CONFIGURAÇÃO)
 # =============================
 def enviar_telegram(nick):
-    # INSIRA SEUS DADOS AQUI PARA RECEBER O AVISO NO CELULAR
-    token = "SEU_TOKEN_AQUI" 
-    chat_id = "SEU_CHAT_ID_AQUI" 
+    # ATENÇÃO: Verifique se não há espaços em branco dentro das aspas
+    token = "8088132092:AAEKm7lOaros8pKw93KptSsT4Qj8VZoO7tA" # <--- SEU TOKEN COMPLETO AQUI
+    chat_id = "7015891120" # <--- SEU ID (APENAS NÚMEROS) AQUI
     
+    import requests
     mensagem = f"🚀 **Nova Solicitação de Ranking!**\n\n**Nickname:** `{nick}`"
     url = f"https://api.telegram.org/bot{token}/sendMessage?chat_id={chat_id}&text={mensagem}&parse_mode=Markdown"
+    
     try:
-        requests.get(url, timeout=5)
+        response = requests.get(url, timeout=5)
+        # Se quiser ver o que está acontecendo no log do Streamlit:
+        print(response.text) 
     except:
         pass
 
