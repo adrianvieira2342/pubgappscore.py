@@ -3,16 +3,13 @@ import pandas as pd
 import subprocess
 
 # =============================
-# ATUALIZA BANCO AO CARREGAR PÁGINA
+# ATUALIZA O BANCO AO ABRIR OU RECARREGAR A PÁGINA
 # =============================
-@st.cache_resource
-def atualizar_banco():
-    try:
-        subprocess.run(["python", "scripts/pubg_ranking.py"])
-    except:
-        pass
+try:
+    subprocess.run(["python", "scripts/pubg_ranking.py"])
+except:
+    pass
 
-atualizar_banco()
 # =============================
 # CONFIGURAÇÃO DA PÁGINA (ORIGINAL)
 # =============================
@@ -53,20 +50,6 @@ st.markdown("""
 """, unsafe_allow_html=True)
 
 # =============================
-# BOTÃO ATUALIZAR BANCO
-# =============================
-col1, col2 = st.columns([8,1])
-
-with col2:
-    if st.button("🔄 Atualizar"):
-        with st.spinner("Atualizando dados da API PUBG..."):
-            try:
-                atualizar_ranking()
-                st.success("Banco atualizado com sucesso!")
-            except Exception as e:
-                st.error(f"Erro ao atualizar banco: {e}")
-
-# =============================
 # CONEXÃO COM BANCO
 # =============================
 def get_data(table_name="v_ranking_squad_completo"):
@@ -77,7 +60,7 @@ def get_data(table_name="v_ranking_squad_completo"):
             url=st.secrets["DATABASE_URL"]
         )
         query = f"SELECT * FROM {table_name}"
-        df = conn.query(query, ttl=0)
+        df = conn.query(query, ttl=0) 
         return df
     except Exception as e:
         st.error(f"Erro na conexão com o banco: {e}")
@@ -115,15 +98,15 @@ def processar_ranking_completo(df_ranking, col_score):
     df_ranking['Classificação'] = zonas
 
     cols_base = [
-        'Pos','Classificação','nick',
-        'partidas','kr','vitorias',
-        'kills','assists','headshots',
-        'revives','kill_dist_max','dano_medio'
+        'Pos', 'Classificação', 'nick',
+        'partidas', 'kr', 'vitorias',
+        'kills', 'assists', 'headshots',
+        'revives', 'kill_dist_max', 'dano_medio'
     ]
-
+    
     if col_score not in cols_base:
         cols_base.append(col_score)
-
+        
     return df_ranking[cols_base]
 
 # =============================
@@ -140,88 +123,100 @@ if not df_bruto.empty:
         try:
             dt_raw = pd.to_datetime(df_bruto['ultima_atualizacao'].iloc[0])
             dt_formatada = dt_raw.strftime('%d/%m/%Y %H:%M')
-            st.markdown(
-                f"<p style='text-align:left; color: #888; margin-top: -15px;'>📅 Última atualização do banco: <b>{dt_formatada}</b></p>",
-                unsafe_allow_html=True
-            )
+            st.markdown(f"<p style='text-align:left; color: #888; margin-top: -15px;'>📅 Última atualização do banco: <b>{dt_formatada}</b></p>", unsafe_allow_html=True)
         except:
             pass
 
     st.markdown("---")
 
-    cols_calc = ['partidas','vitorias','kills','assists','headshots','revives','dano_medio']
+    cols_calc = ['partidas', 'vitorias', 'kills', 'assists', 'headshots', 'revives', 'dano_medio']
 
     for col in cols_calc:
         df_bruto[col] = pd.to_numeric(df_bruto[col], errors='coerce').fillna(0)
         if not df_bots_raw.empty and col in df_bots_raw.columns:
             df_bots_raw[col] = pd.to_numeric(df_bots_raw[col], errors='coerce').fillna(0)
 
+    if not df_bots_raw.empty:
+        for _, row_bot in df_bots_raw.iterrows():
+            nick_bot = row_bot['nick']
+            if nick_bot in df_bruto['nick'].values:
+                for col in ['partidas', 'vitorias', 'kills', 'assists', 'headshots', 'revives']:
+                    v_total = df_bruto.loc[df_bruto['nick'] == nick_bot, col].values[0]
+                    v_casual = abs(row_bot[col])
+                    df_bruto.loc[df_bruto['nick'] == nick_bot, col] = max(0, v_total - v_casual)
+
+                p_limpas = max(1, df_bruto.loc[df_bruto['nick'] == nick_bot, 'partidas'].values[0])
+                k_limpas = df_bruto.loc[df_bruto['nick'] == nick_bot, 'kills'].values[0]
+                df_bruto.loc[df_bruto['nick'] == nick_bot, 'kr'] = k_limpas / p_limpas
+
     for col in cols_calc:
         df_bruto[col] = df_bruto[col].astype(int)
 
     def highlight_zones(row):
-        if row['Classificação']=="Elite Zone":
-            return ['background-color:#003300;color:white;font-weight:bold']*len(row)
-        if row['Classificação']=="Cocô Zone":
-            return ['background-color:#4d0000;color:white;font-weight:bold']*len(row)
-        return ['']*len(row)
+        if row['Classificação'] == "Elite Zone":
+            return ['background-color: #003300; color: white; font-weight: bold'] * len(row)
+        if row['Classificação'] == "Cocô Zone":
+            return ['background-color: #4d0000; color: white; font-weight: bold'] * len(row)
+        return [''] * len(row)
 
-    def renderizar_ranking(df_local,col_score,formula,explicacao):
-
+    def renderizar_ranking(df_local, col_score, formula, explicacao):
         if formula is not None:
-            df_local[col_score]=formula.round(2)
+            df_local[col_score] = formula.round(2)
 
-        ranking_final=processar_ranking_completo(df_local,col_score)
+        ranking_final = processar_ranking_completo(df_local, col_score)
 
-        top1,top2,top3=st.columns(3)
+        top1, top2, top3 = st.columns(3)
 
         with top1:
-            st.metric("🥇 1º Lugar",ranking_final.iloc[0]['nick'],f"{ranking_final.iloc[0][col_score]:.2f} pts")
+            nome = ranking_final.iloc[0]['nick']
+            valor = f"{ranking_final.iloc[0][col_score]:.2f} pts"
+            st.metric("🥇 1º Lugar", nome, valor)
 
         with top2:
-            st.metric("🥈 2º Lugar",ranking_final.iloc[1]['nick'],f"{ranking_final.iloc[1][col_score]:.2f} pts")
+            nome = ranking_final.iloc[1]['nick']
+            valor = f"{ranking_final.iloc[1][col_score]:.2f} pts"
+            st.metric("🥈 2º Lugar", nome, valor)
 
         with top3:
-            st.metric("🥉 3º Lugar",ranking_final.iloc[2]['nick'],f"{ranking_final.iloc[2][col_score]:.2f} pts")
+            nome = ranking_final.iloc[2]['nick']
+            valor = f"{ranking_final.iloc[2][col_score]:.2f} pts"
+            st.metric("🥉 3º Lugar", nome, valor)
 
-        st.markdown(
-            f"<div style='background-color:#161b22;padding:12px;border-radius:8px;border-left:5px solid #0078ff;margin-bottom:20px;text-align:left;'>💡 {explicacao}</div>",
-            unsafe_allow_html=True
-        )
+        st.markdown(f"<div style='background-color: #161b22; padding: 12px; border-radius: 8px; border-left: 5px solid #0078ff; margin-bottom: 20px; text-align: left;'>💡 {explicacao}</div>", unsafe_allow_html=True)
 
         st.dataframe(
             ranking_final.style
-            .background_gradient(cmap='YlGnBu',subset=[col_score])
-            .apply(highlight_zones,axis=1),
+            .background_gradient(cmap='YlGnBu' if col_score != 'score' else 'RdYlGn', subset=[col_score])
+            .apply(highlight_zones, axis=1),
             use_container_width=True,
-            height=(len(ranking_final)*35)+80,
+            height=(len(ranking_final) * 35) + 80,
             hide_index=True
         )
 
-    tab1,tab2,tab3,tab4=st.tabs([
+    tab1, tab2, tab3, tab4 = st.tabs([
         "🔥 PRO Player",
         "🤝 TEAM Player",
         "🎯 Atirador de Elite",
         "🤖 Bot Detector"
     ])
 
-    df_valid=df_bruto[df_bruto['partidas']>0].copy()
-    df_valid['partidas_calc']=df_valid['partidas'].replace(0,1)
+    df_valid = df_bruto[df_bruto['partidas'] > 0].copy()
+    df_valid['partidas_calc'] = df_valid['partidas'].replace(0, 1)
 
     with tab1:
-        f_pro=(df_valid['kr']*40)+(df_valid['dano_medio']/8)+((df_valid['vitorias']/df_valid['partidas_calc'])*500)
-        renderizar_ranking(df_valid.copy(),'Score_Pro',f_pro,"Fórmula PRO")
+        f_pro = (df_valid['kr'] * 40) + (df_valid['dano_medio'] / 8) + ((df_valid['vitorias'] / df_valid['partidas_calc']) * 500)
+        renderizar_ranking(df_valid.copy(), 'Score_Pro', f_pro, "Fórmula PRO")
 
     with tab2:
-        f_team=((df_valid['vitorias']/df_valid['partidas_calc'])*1000)+((df_valid['revives']/df_valid['partidas_calc'])*50)+((df_valid['assists']/df_valid['partidas_calc'])*35)
-        renderizar_ranking(df_valid.copy(),'Score_Team',f_team,"Fórmula TEAM")
+        f_team = ((df_valid['vitorias'] / df_valid['partidas_calc']) * 1000) + ((df_valid['revives'] / df_valid['partidas_calc']) * 50) + ((df_valid['assists'] / df_valid['partidas_calc']) * 35)
+        renderizar_ranking(df_valid.copy(), 'Score_Team', f_team, "Fórmula TEAM")
 
     with tab3:
-        f_elite=(df_valid['kr']*50)+((df_valid['headshots']/df_valid['partidas_calc'])*60)+(df_valid['dano_medio']/5)
-        renderizar_ranking(df_valid.copy(),'Score_Elite',f_elite,"Fórmula ELITE")
+        f_elite = (df_valid['kr'] * 50) + ((df_valid['headshots'] / df_valid['partidas_calc']) * 60) + (df_valid['dano_medio'] / 5)
+        renderizar_ranking(df_valid.copy(), 'Score_Elite', f_elite, "Fórmula ELITE")
 
     st.markdown("---")
-    st.markdown("<div style='text-align:center;color:gray;padding:20px;'>📊 <b>By Adriano Vieira</b></div>",unsafe_allow_html=True)
+    st.markdown("<div style='text-align: center; color: gray; padding: 20px;'>📊 <b>By Adriano Vieira</b></div>", unsafe_allow_html=True)
 
 else:
     st.warning("Conectado ao banco. Aguardando dados...")
