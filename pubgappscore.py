@@ -1,12 +1,5 @@
 import streamlit as st
 import pandas as pd
-import subprocess
-
-# Atualiza banco ao abrir página ou F5
-try:
-    subprocess.run(["python", "scripts/pubg_ranking.py"])
-except Exception:
-    pass
 
 # =============================
 # CONFIGURAÇÃO DA PÁGINA (ORIGINAL)
@@ -143,17 +136,25 @@ if not df_bruto.empty:
                 # Subtraímos apenas valores ACUMULATIVOS
                 for col in ['partidas', 'vitorias', 'kills', 'assists', 'headshots', 'revives']:
                     v_total = df_bruto.loc[df_bruto['nick'] == nick_bot, col].values[0]
+                    # Usamos abs() para garantir que estamos subtraindo o valor bruto
                     v_casual = abs(row_bot[col]) 
                     df_bruto.loc[df_bruto['nick'] == nick_bot, col] = max(0, v_total - v_casual)
                 
+                # RECALCULO DE KR E DANO MÉDIO (Para não bugar o Score)
                 p_limpas = max(1, df_bruto.loc[df_bruto['nick'] == nick_bot, 'partidas'].values[0])
                 k_limpas = df_bruto.loc[df_bruto['nick'] == nick_bot, 'kills'].values[0]
+                
+                # Atualiza o KR com base nos novos valores limpos
                 df_bruto.loc[df_bruto['nick'] == nick_bot, 'kr'] = k_limpas / p_limpas
+                
+                # O Dano Médio não se subtrai, ele se mantém o original do banco 
+                # a menos que você tenha o dano total da partida de bot.
     # ==========================================================
 
     for col in cols_calc:
         df_bruto[col] = df_bruto[col].astype(int)
 
+    # --- FUNÇÕES DE SUPORTE À UI ---
     def highlight_zones(row):
         if row['Classificação'] == "Elite Zone":
             return ['background-color: #003300; color: white; font-weight: bold'] * len(row)
@@ -167,6 +168,7 @@ if not df_bruto.empty:
         
         ranking_final = processar_ranking_completo(df_local, col_score)
 
+        # Métrica de Topo
         top1, top2, top3 = st.columns(3)
         with top1:
             nome = ranking_final.iloc[0]['nick'] if len(ranking_final) > 0 else "-"
@@ -183,6 +185,8 @@ if not df_bruto.empty:
 
         st.markdown(f"<div style='background-color: #161b22; padding: 12px; border-radius: 8px; border-left: 5px solid #0078ff; margin-bottom: 20px; text-align: left;'>💡 {explicacao}</div>", unsafe_allow_html=True)
 
+        # --- ALTERAÇÃO SOLICITADA: FORMATAÇÃO COM SINAL DE SUBTRAÇÃO PARA ANTI-CASUAL ---
+# AJUSTE DO FORMATADOR: Usando lambda com abs() para evitar o sinal duplo '--'
         if col_score == 'score':
             format_dict = {
                 'kr': lambda x: f"- {abs(x):.2f}",
@@ -221,6 +225,7 @@ if not df_bruto.empty:
             }
         )
 
+    # --- TABS ---
     tab1, tab2, tab3, tab4 = st.tabs([
         "🔥 PRO Player", 
         "🤝 TEAM Player", 
