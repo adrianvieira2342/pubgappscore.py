@@ -2,12 +2,10 @@ import streamlit as st
 import pandas as pd
 import subprocess
 
-# =============================
-# ATUALIZA O BANCO AO ABRIR OU RECARREGAR A PÁGINA
-# =============================
+# Atualiza banco ao abrir página ou F5
 try:
     subprocess.run(["python", "scripts/pubg_ranking.py"])
-except:
+except Exception:
     pass
 
 # =============================
@@ -74,6 +72,7 @@ def processar_ranking_completo(df_ranking, col_score):
     novos_nicks = []
     zonas = []
     
+    # Para a aba de bots (score negativo), ordenamos de forma crescente
     is_bot_ranking = col_score == 'score'
     df_ranking = df_ranking.sort_values(by=col_score, ascending=is_bot_ranking).reset_index(drop=True)
 
@@ -118,19 +117,20 @@ df_bruto = get_data("v_ranking_squad_completo")
 df_bots_raw = get_data("ranking_bot")
 
 if not df_bruto.empty:
-
+    # --- INFORMATIVO DE ATUALIZAÇÃO ---
     if 'ultima_atualizacao' in df_bruto.columns:
         try:
             dt_raw = pd.to_datetime(df_bruto['ultima_atualizacao'].iloc[0])
             dt_formatada = dt_raw.strftime('%d/%m/%Y %H:%M')
             st.markdown(f"<p style='text-align:left; color: #888; margin-top: -15px;'>📅 Última atualização do banco: <b>{dt_formatada}</b></p>", unsafe_allow_html=True)
-        except:
-            pass
+        except: pass
 
     st.markdown("---")
 
+    # ==========================================================
+    # AJUSTE: ANULANDO PARTIDAS CASUAIS DO TOTAL (CORRIGIDO)
+    # ==========================================================
     cols_calc = ['partidas', 'vitorias', 'kills', 'assists', 'headshots', 'revives', 'dano_medio']
-
     for col in cols_calc:
         df_bruto[col] = pd.to_numeric(df_bruto[col], errors='coerce').fillna(0)
         if not df_bots_raw.empty and col in df_bots_raw.columns:
@@ -140,14 +140,16 @@ if not df_bruto.empty:
         for _, row_bot in df_bots_raw.iterrows():
             nick_bot = row_bot['nick']
             if nick_bot in df_bruto['nick'].values:
+                # Subtraímos apenas valores ACUMULATIVOS
                 for col in ['partidas', 'vitorias', 'kills', 'assists', 'headshots', 'revives']:
                     v_total = df_bruto.loc[df_bruto['nick'] == nick_bot, col].values[0]
-                    v_casual = abs(row_bot[col])
+                    v_casual = abs(row_bot[col]) 
                     df_bruto.loc[df_bruto['nick'] == nick_bot, col] = max(0, v_total - v_casual)
-
+                
                 p_limpas = max(1, df_bruto.loc[df_bruto['nick'] == nick_bot, 'partidas'].values[0])
                 k_limpas = df_bruto.loc[df_bruto['nick'] == nick_bot, 'kills'].values[0]
                 df_bruto.loc[df_bruto['nick'] == nick_bot, 'kr'] = k_limpas / p_limpas
+    # ==========================================================
 
     for col in cols_calc:
         df_bruto[col] = df_bruto[col].astype(int)
@@ -162,40 +164,66 @@ if not df_bruto.empty:
     def renderizar_ranking(df_local, col_score, formula, explicacao):
         if formula is not None:
             df_local[col_score] = formula.round(2)
-
+        
         ranking_final = processar_ranking_completo(df_local, col_score)
 
         top1, top2, top3 = st.columns(3)
-
         with top1:
-            nome = ranking_final.iloc[0]['nick']
-            valor = f"{ranking_final.iloc[0][col_score]:.2f} pts"
+            nome = ranking_final.iloc[0]['nick'] if len(ranking_final) > 0 else "-"
+            valor = f"{ranking_final.iloc[0][col_score]:.2f} pts" if len(ranking_final) > 0 else "0.00 pts"
             st.metric("🥇 1º Lugar", nome, valor)
-
         with top2:
-            nome = ranking_final.iloc[1]['nick']
-            valor = f"{ranking_final.iloc[1][col_score]:.2f} pts"
+            nome = ranking_final.iloc[1]['nick'] if len(ranking_final) > 1 else "-"
+            valor = f"{ranking_final.iloc[1][col_score]:.2f} pts" if len(ranking_final) > 1 else "0.00 pts"
             st.metric("🥈 2º Lugar", nome, valor)
-
         with top3:
-            nome = ranking_final.iloc[2]['nick']
-            valor = f"{ranking_final.iloc[2][col_score]:.2f} pts"
+            nome = ranking_final.iloc[2]['nick'] if len(ranking_final) > 2 else "-"
+            valor = f"{ranking_final.iloc[2][col_score]:.2f} pts" if len(ranking_final) > 2 else "0.00 pts"
             st.metric("🥉 3º Lugar", nome, valor)
 
         st.markdown(f"<div style='background-color: #161b22; padding: 12px; border-radius: 8px; border-left: 5px solid #0078ff; margin-bottom: 20px; text-align: left;'>💡 {explicacao}</div>", unsafe_allow_html=True)
 
+        if col_score == 'score':
+            format_dict = {
+                'kr': lambda x: f"- {abs(x):.2f}",
+                'kill_dist_max': lambda x: f"- {abs(x):.2f}",
+                'partidas': lambda x: f"- {int(abs(x))}",
+                'vitorias': lambda x: f"- {int(abs(x))}",
+                'kills': lambda x: f"- {int(abs(x))}",
+                'assists': lambda x: f"- {int(abs(x))}",
+                'headshots': lambda x: f"- {int(abs(x))}",
+                'revives': lambda x: f"- {int(abs(x))}",
+                'dano_medio': lambda x: f"- {int(abs(x))}",
+                col_score: "{:.2f}"
+            }
+        else:
+            format_dict = {
+                'kr': "{:.2f}", 'kill_dist_max': "{:.2f}", col_score: "{:.2f}",
+                'partidas': "{:d}", 'vitorias': "{:d}", 'kills': "{:d}", 
+                'assists': "{:d}", 'headshots': "{:d}", 'revives': "{:d}", 'dano_medio': "{:d}"
+            }
+        
         st.dataframe(
             ranking_final.style
             .background_gradient(cmap='YlGnBu' if col_score != 'score' else 'RdYlGn', subset=[col_score])
-            .apply(highlight_zones, axis=1),
+            .apply(highlight_zones, axis=1)
+            .format(format_dict),
             use_container_width=True,
             height=(len(ranking_final) * 35) + 80,
-            hide_index=True
+            hide_index=True,
+            column_config={
+                "nick": "Nickname", "partidas": "Partidas", "kr": "K/R",
+                "vitorias": "Vitórias", "kills": "Kills", "assists": "Assists",
+                "headshots": "Headshots", "revives": "Revives",
+                "kill_dist_max": "Kill Dist Máx", "dano_medio": "Dano Médio",
+                "Score_Pro": "Score Pro", "Score_Team": "Score Team", 
+                "Score_Elite": "Score Elite", "score": "Penalidade"
+            }
         )
 
     tab1, tab2, tab3, tab4 = st.tabs([
-        "🔥 PRO Player",
-        "🤝 TEAM Player",
+        "🔥 PRO Player", 
+        "🤝 TEAM Player", 
         "🎯 Atirador de Elite",
         "🤖 Bot Detector"
     ])
@@ -205,15 +233,23 @@ if not df_bruto.empty:
 
     with tab1:
         f_pro = (df_valid['kr'] * 40) + (df_valid['dano_medio'] / 8) + ((df_valid['vitorias'] / df_valid['partidas_calc']) * 500)
-        renderizar_ranking(df_valid.copy(), 'Score_Pro', f_pro, "Fórmula PRO")
+        renderizar_ranking(df_valid.copy(), 'Score_Pro', f_pro, "Fórmula PRO: Valoriza equilíbrio entre sobrevivência e agressividade. Foca em K/R alto, dano consistente e taxa de vitória")
 
     with tab2:
         f_team = ((df_valid['vitorias'] / df_valid['partidas_calc']) * 1000) + ((df_valid['revives'] / df_valid['partidas_calc']) * 50) + ((df_valid['assists'] / df_valid['partidas_calc']) * 35)
-        renderizar_ranking(df_valid.copy(), 'Score_Team', f_team, "Fórmula TEAM")
+        renderizar_ranking(df_valid.copy(), 'Score_Team', f_team, "Fórmula TEAM: Foco total no jogo coletivo. Pontua mais quem revive aliados, dá assistências e garante a vitória.")
 
     with tab3:
         f_elite = (df_valid['kr'] * 50) + ((df_valid['headshots'] / df_valid['partidas_calc']) * 60) + (df_valid['dano_medio'] / 5)
-        renderizar_ranking(df_valid.copy(), 'Score_Elite', f_elite, "Fórmula ELITE")
+        renderizar_ranking(df_valid.copy(), 'Score_Elite', f_elite, "Fórmula ELITE: Prioriza K/R, precisão de Headshots e volume de dano. ")
+
+    with tab4:
+        if not df_bots_raw.empty:
+            df_bots = df_bots_raw[df_bots_raw['partidas'] > 0].copy()
+            if not df_bots.empty:
+                renderizar_ranking(df_bots, 'score', None, "Anti-Casual: Jogadores penalizados por matar bots em partidas no modo casual.")
+            else:
+                st.info("Nenhuma penalidade registrada.")
 
     st.markdown("---")
     st.markdown("<div style='text-align: center; color: gray; padding: 20px;'>📊 <b>By Adriano Vieira</b></div>", unsafe_allow_html=True)
