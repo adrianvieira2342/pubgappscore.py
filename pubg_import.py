@@ -3,6 +3,7 @@ import time
 import requests
 import psycopg2
 from datetime import datetime
+from concurrent.futures import ThreadPoolExecutor, as_completed
 
 DATABASE_URL = os.environ.get("DATABASE_URL")
 API_KEY = os.environ.get("PUBG_API_KEY")
@@ -13,7 +14,7 @@ headers = {
     "Accept": "application/vnd.api+json"
 }
 
-players_names = [
+players = [
     "Adrian-Wan", "MironoteuCool", "FabioEspeto", "Mamutag_Komander",
     "Robson_Foz", "MEIRAA", "EL-LOCORJ", "SalaminhoKBD",
     "nelio_ponto_dev", "CARNEIROOO", "Kowalski_PR", "Zacouteguy",
@@ -21,6 +22,9 @@ players_names = [
     "Fumiga_BR", "O-CARRASCO"
 ]
 
+# ===============================
+# REQUISIÇÃO COM CONTROLE INTELIGENTE
+# ===============================
 
 def fazer_requisicao(url):
     for tentativa in range(3):
@@ -33,152 +37,136 @@ def fazer_requisicao(url):
             continue
 
         return res
-    return None
 
+    return None
 
 def dividir_lista(lista, tamanho):
     for i in range(0, len(lista), tamanho):
         yield lista[i:i + tamanho]
 
+# ===============================
+# INÍCIO
+# ===============================
 
-# =====================================
-# FUNÇÃO PRINCIPAL (CHAMADA PELO SITE)
-# =====================================
+inicio_total = time.time()
+print("🚀 Detectando temporada...")
 
-def atualizar_ranking():
+res_season = fazer_requisicao(f"{BASE_URL}/seasons")
+current_season_id = next(
+    (s["id"] for s in res_season.json()["data"]
+     if s["attributes"]["isCurrentSeason"]),
+    ""
+)
 
-    inicio_total = time.time()
-    print("🚀 Atualizando ranking PUBG...")
+print(f"📅 Temporada atual: {current_season_id}")
 
-    # Detectar temporada
-    res_season = fazer_requisicao(f"{BASE_URL}/seasons")
+# ===============================
+# BUSCAR IDS EM LOTE
+# ===============================
 
-    current_season_id = next(
-        (s["id"] for s in res_season.json()["data"]
-         if s["attributes"]["isCurrentSeason"]),
-        ""
+print("🔎 Buscando IDs em lote...")
+player_ids = {}
+
+for grupo in dividir_lista(players, 10):
+    nomes = ",".join(grupo)
+    res = fazer_requisicao(
+        f"{BASE_URL}/players?filter[playerNames]={nomes}"
+    )
+    if res and res.status_code == 200:
+        for p in res.json()["data"]:
+            player_ids[p["attributes"]["name"]] = p["id"]
+
+print(f"✅ {len(player_ids)} IDs encontrados.")
+
+# ===============================
+# BUSCA PARALELA DE STATS
+# ===============================
+
+def buscar_stats(player, p_id):
+    url = f"{BASE_URL}/players/{p_id}/seasons/{current_season_id}"
+    res = fazer_requisicao(url)
+
+    if not res or res.status_code != 200:
+        return None
+
+    stats = res.json()["data"]["attributes"]["gameModeStats"].get("squad", {})
+    partidas = stats.get("roundsPlayed", 0)
+
+    if partidas == 0:
+        return None
+
+    kills = stats.get("kills", 0)
+    vitorias = stats.get("wins", 0)
+    assists = stats.get("assists", 0)
+    headshots = stats.get("headshotKills", 0)
+    revives = stats.get("revives", 0)
+    dano_total = stats.get("damageDealt", 0)
+    dist_max = stats.get("longestKill", 0.0)
+
+    kr = round(kills / partidas, 2)
+    dano_medio = int(dano_total / partidas)
+
+    print(f"⚡ {player} processado")
+
+    return (
+        player, partidas, kr, vitorias, kills,
+        dano_medio, assists, headshots,
+        revives, dist_max, datetime.utcnow()
     )
 
-    print(f"📅 Temporada atual: {current_season_id}")
+print("⚡ Buscando estatísticas em paralelo...")
 
-    # ===============================
-    # BUSCAR IDS
-    # ===============================
+resultados = []
 
-    mapping_id_name = {}
+with ThreadPoolExecutor(max_workers=5) as executor:
+    futures = [
+        executor.submit(buscar_stats, player, p_id)
+        for player, p_id in player_ids.items()
+    ]
 
-    for grupo in dividir_lista(players_names, 10):
-        nomes = ",".join(grupo)
+    for future in as_completed(futures):
+        resultado = future.result()
+        if resultado:
+            resultados.append(resultado)
 
-        res = fazer_requisicao(f"{BASE_URL}/players?filter[playerNames]={nomes}")
+print(f"✅ {len(resultados)} jogadores com stats válidas.")
 
-        if res and res.status_code == 200:
-            for p in res.json()["data"]:
-                mapping_id_name[p["id"]] = p["attributes"]["name"]
+# ===============================
+# BATCH INSERT
+# ===============================
 
-    print(f"✅ {len(mapping_id_name)} jogadores encontrados")
+try:
+    conn = psycopg2.connect(DATABASE_URL)
+    cursor = conn.cursor()
 
-    # ===============================
-    # BUSCAR STATS
-    # ===============================
+    sql = """
+    INSERT INTO ranking_squad
+    (nick, partidas, kr, vitorias, kills, dano_medio,
+     assists, headshots, revives, kill_dist_max, atualizado_em)
+    VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+    ON CONFLICT (nick) DO UPDATE SET
+    partidas=EXCLUDED.partidas,
+    kr=EXCLUDED.kr,
+    vitorias=EXCLUDED.vitorias,
+    kills=EXCLUDED.kills,
+    dano_medio=EXCLUDED.dano_medio,
+    assists=EXCLUDED.assists,
+    headshots=EXCLUDED.headshots,
+    revives=EXCLUDED.revives,
+    kill_dist_max=EXCLUDED.kill_dist_max,
+    atualizado_em=EXCLUDED.atualizado_em
+    """
 
-    resultados = []
+    cursor.executemany(sql, resultados)
+    conn.commit()
 
-    for grupo_ids in dividir_lista(list(mapping_id_name.keys()), 10):
+    cursor.close()
+    conn.close()
 
-        ids_string = ",".join(grupo_ids)
+    print("💾 Banco atualizado com sucesso!")
 
-        url_stats = f"{BASE_URL}/seasons/{current_season_id}/gameMode/squad/players?filter[playerIds]={ids_string}"
+except Exception as e:
+    print(f"💥 Erro no banco: {e}")
 
-        res = fazer_requisicao(url_stats)
-
-        if res and res.status_code == 200:
-
-            for p_data in res.json().get("data", []):
-
-                p_id = p_data["relationships"]["player"]["data"]["id"]
-
-                player_name = mapping_id_name.get(p_id)
-
-                stats = p_data["attributes"]["gameModeStats"]
-
-                partidas = stats.get("roundsPlayed", 0)
-
-                if partidas == 0:
-                    continue
-
-                kills = stats.get("kills", 0)
-                vitorias = stats.get("wins", 0)
-                assists = stats.get("assists", 0)
-                headshots = stats.get("headshotKills", 0)
-                revives = stats.get("revives", 0)
-                dano_total = stats.get("damageDealt", 0)
-                dist_max = stats.get("longestKill", 0.0)
-
-                kr = round(kills / partidas, 2)
-                dano_medio = int(dano_total / partidas)
-
-                resultados.append((
-                    player_name,
-                    partidas,
-                    kr,
-                    vitorias,
-                    kills,
-                    dano_medio,
-                    assists,
-                    headshots,
-                    revives,
-                    dist_max,
-                    datetime.utcnow()
-                ))
-
-                print(f"⚡ {player_name} atualizado")
-
-    # ===============================
-    # SALVAR NO BANCO
-    # ===============================
-
-    if resultados:
-
-        try:
-
-            conn = psycopg2.connect(DATABASE_URL)
-
-            cursor = conn.cursor()
-
-            sql = """
-            INSERT INTO ranking_squad
-            (nick, partidas, kr, vitorias, kills, dano_medio,
-            assists, headshots, revives, kill_dist_max, atualizado_em)
-
-            VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)
-
-            ON CONFLICT (nick) DO UPDATE SET
-            partidas=EXCLUDED.partidas,
-            kr=EXCLUDED.kr,
-            vitorias=EXCLUDED.vitorias,
-            kills=EXCLUDED.kills,
-            dano_medio=EXCLUDED.dano_medio,
-            assists=EXCLUDED.assists,
-            headshots=EXCLUDED.headshots,
-            revives=EXCLUDED.revives,
-            kill_dist_max=EXCLUDED.kill_dist_max,
-            atualizado_em=EXCLUDED.atualizado_em
-            """
-
-            cursor.executemany(sql, resultados)
-
-            conn.commit()
-
-            cursor.close()
-            conn.close()
-
-            print("💾 Banco atualizado!")
-
-        except Exception as e:
-
-            print(f"💥 Erro no banco: {e}")
-
-    fim_total = time.time()
-
-    print(f"✅ Atualização finalizada em {round(fim_total - inicio_total,2)}s")
+fim_total = time.time()
+print(f"⏱ Tempo total: {round(fim_total - inicio_total, 2)} segundos")
