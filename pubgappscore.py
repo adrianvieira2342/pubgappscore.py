@@ -1,7 +1,18 @@
 import streamlit as st
 import pandas as pd
-from scripts.pubg_ranking import atualizar_ranking
+import subprocess
 
+# =============================
+# ATUALIZA BANCO AO CARREGAR PÁGINA
+# =============================
+@st.cache_resource
+def atualizar_banco():
+    try:
+        subprocess.run(["python", "scripts/pubg_ranking.py"])
+    except:
+        pass
+
+atualizar_banco()
 # =============================
 # CONFIGURAÇÃO DA PÁGINA (ORIGINAL)
 # =============================
