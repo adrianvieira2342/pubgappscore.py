@@ -237,7 +237,7 @@ if not df_bruto.empty:
             "Score_Elite": "Score Elite",
             "score": "Penalidade"
             }
-        )
+    )
 
     tab1, tab2, tab3, tab4 = st.tabs([
         "🔥 PRO Player",
