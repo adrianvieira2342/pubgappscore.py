@@ -228,7 +228,7 @@ if not df_bruto.empty:
 
         if row["Classificação"]=="Cocô Zone":
 
-            return ["background-color:#4d0000;color:white;font-weight:bold"]*len(row)
+            return ['background-color: #5A3E1B; color: white; font-weight: bold'] * len(row)
 
         return [""]*len(row)
 
