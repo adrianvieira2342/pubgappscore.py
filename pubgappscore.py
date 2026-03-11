@@ -1,6 +1,7 @@
 import streamlit as st
 import pandas as pd
 import subprocess
+import sys
 
 # =============================
 # ATUALIZAÇÃO AUTOMÁTICA DO BANCO
@@ -8,7 +9,7 @@ import subprocess
 
 if "ranking_atualizado" not in st.session_state:
     try:
-        subprocess.run(["python", "pubg_import.py"], check=True)
+        subprocess.run([sys.executable, "pubg_import.py"], check=True)
         st.session_state["ranking_atualizado"] = True
     except Exception as e:
         st.warning(f"Erro ao atualizar ranking: {e}")
