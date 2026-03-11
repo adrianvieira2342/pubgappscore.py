@@ -252,34 +252,55 @@ if not df_bruto.empty:
                 st.info("Nenhuma penalidade registrada.")
 
     # =============================
-    # ESTATÍSTICAS DE DESTAQUE (NOVO)
+    # ESTATÍSTICAS COMPARATIVAS (COMPLETA)
     # =============================
     st.markdown("---")
-    st.markdown("### 🌟 Destaques da Temporada")
-    
-    if not df_valid.empty:
-        c1, c2, c3, c4, c5 = st.columns(5)
-        
-        # Helper para remover emojis dos nomes nos destaques
-        def clean_n(val):
-            for e in ["💀", "💩", "👤"]: val = val.replace(e, "")
-            return val.strip()
+    st.markdown("### 📊 Performance Comparativa (Top 5)")
 
-        with c1:
-            row = df_valid.loc[df_valid['kills'].idxmax()]
-            st.markdown(f"🎯 **Mais Kills**\n\n{clean_n(row['nick'])}\n\n`{int(row['kills'])} Kills`")
-        with c2:
-            row = df_valid.loc[df_valid['vitorias'].idxmax()]
-            st.markdown(f"🏆 **Mais Vitórias**\n\n{clean_n(row['nick'])}\n\n`{int(row['vitorias'])} Wins`")
-        with c3:
-            row = df_valid.loc[df_valid['headshots'].idxmax()]
-            st.markdown(f"💀 **Sniper (HS)**\n\n{clean_n(row['nick'])}\n\n`{int(row['headshots'])} HS`")
-        with c4:
-            row = df_valid.loc[df_valid['kill_dist_max'].idxmax()]
-            st.markdown(f"📏 **Longo Alcance**\n\n{clean_n(row['nick'])}\n\n`{row['kill_dist_max']:.1f}m`")
-        with c5:
-            row = df_valid.loc[df_valid['dano_medio'].idxmax()]
-            st.markdown(f"🔥 **Maior Dano**\n\n{clean_n(row['nick'])}\n\n`{int(row['dano_medio'])} avg`")
+    if not df_valid.empty:
+        col_graf1, col_graf2 = st.columns(2)
+
+        with col_graf1:
+            # Comparativo de Dano Médio
+            st.write("🔥 **Poder de Fogo (Dano Médio)**")
+            df_dano = df_valid.nlargest(5, 'dano_medio')[['nick', 'dano_medio']]
+            st.bar_chart(df_dano.set_index('nick'), color="#ff4b4b", horizontal=True)
+
+            # Comparativo de Headshots
+            st.write("💀 **Precisão (Total Headshots)**")
+            df_hs = df_valid.nlargest(5, 'headshots')[['nick', 'headshots']]
+            st.bar_chart(df_hs.set_index('nick'), color="#0078ff", horizontal=True)
+
+        with col_graf2:
+            # Comparativo de Abates
+            st.write("🎯 **Letalidade (Total Kills)**")
+            df_kills = df_valid.nlargest(5, 'kills')[['nick', 'kills']]
+            st.bar_chart(df_kills.set_index('nick'), color="#f63366", horizontal=True)
+
+            # Comparativo de Sobrevivência/Vitórias
+            st.write("🏆 **Consistência (Vitórias)**")
+            df_wins = df_valid.nlargest(5, 'vitorias')[['nick', 'vitorias']]
+            st.bar_chart(df_wins.set_index('nick'), color="#00cc66", horizontal=True)
+
+        # Tabela de Recordes Mundiais do Squad
+        st.markdown("#### 🚩 Recordes Individuais da Temporada")
+        rec1, rec2, rec3, rec4 = st.columns(4)
+        
+        with rec1:
+            top_dist = df_valid.loc[df_valid['kill_dist_max'].idxmax()]
+            st.info(f"**Sniper de Elite**\n\n{top_dist['nick']}\n\nAbate a **{top_dist['kill_dist_max']:.1f}m**")
+        
+        with rec2:
+            top_revive = df_valid.loc[df_valid['revives'].idxmax()]
+            st.success(f"**Anjo da Guarda**\n\n{top_revive['nick']}\n\nSalvou **{int(top_revive['revives'])}** aliados")
+
+        with rec3:
+            top_assist = df_valid.loc[df_valid['assists'].idxmax()]
+            st.warning(f"**Braço Direito**\n\n{top_assist['nick']}\n\n**{int(top_assist['assists'])}** assistências")
+
+        with rec4:
+            top_games = df_valid.loc[df_valid['partidas'].idxmax()]
+            st.error(f"**Viciado no Drop**\n\n{top_games['nick']}\n\n**{int(top_games['partidas'])}** partidas")
 
     st.markdown("---")
     st.markdown("<div style='text-align:center;color:gray;padding:20px;'>📊 <b>By Adriano Vieira</b></div>", unsafe_allow_html=True)
