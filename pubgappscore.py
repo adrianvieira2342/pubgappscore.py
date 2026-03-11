@@ -306,15 +306,33 @@ if not df_bruto.empty:
             }
 
         st.dataframe(
-        ranking_final.style
-        .background_gradient(cmap="YlGnBu" if col_score!="score" else "RdYlGn",subset=[col_score])
-        .apply(highlight_zones,axis=1)
-        .format(format_dict),
-        use_container_width=True,
-        height=(len(ranking_final)*35)+80,
-        hide_index=True
-        )
-
+    ranking_final.style
+    .background_gradient(
+        cmap='YlGnBu' if col_score != 'score' else 'RdYlGn',
+        subset=[col_score]
+    )
+    .apply(highlight_zones, axis=1)
+    .format(format_dict),
+    use_container_width=True,
+    height=(len(ranking_final) * 35) + 80,
+    hide_index=True,
+    column_config={
+        "nick": "Nickname",
+        "partidas": "Partidas",
+        "kr": "K/R",
+        "vitorias": "Vitórias",
+        "kills": "Kills",
+        "assists": "Assists",
+        "headshots": "Headshots",
+        "revives": "Revives",
+        "kill_dist_max": "Kill Dist Máx",
+        "dano_medio": "Dano Médio",
+        "Score_Pro": "Score Pro",
+        "Score_Team": "Score Team",
+        "Score_Elite": "Score Elite",
+        "score": "Penalidade"
+    }
+)
 # =============================
 # TABS
 # =============================
