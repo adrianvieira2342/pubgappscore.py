@@ -97,6 +97,7 @@ def buscar_stats(player, p_id):
 
     kills = stats.get("kills", 0)
     vitorias = stats.get("wins", 0)
+    top10 = stats.get("top10s", 0) # NOVO: Captura o dado Top 10 da API
     assists = stats.get("assists", 0)
     headshots = stats.get("headshotKills", 0)
     revives = stats.get("revives", 0)
@@ -109,7 +110,7 @@ def buscar_stats(player, p_id):
     print(f"⚡ {player} processado")
 
     return (
-        player, partidas, kr, vitorias, kills,
+        player, partidas, kr, vitorias, top10, kills,
         dano_medio, assists, headshots,
         revives, dist_max, datetime.utcnow()
     )
@@ -141,13 +142,14 @@ try:
 
     sql = """
     INSERT INTO ranking_squad
-    (nick, partidas, kr, vitorias, kills, dano_medio,
+    (nick, partidas, kr, vitorias, top10, kills, dano_medio,
      assists, headshots, revives, kill_dist_max, atualizado_em)
-    VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+    VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
     ON CONFLICT (nick) DO UPDATE SET
     partidas=EXCLUDED.partidas,
     kr=EXCLUDED.kr,
     vitorias=EXCLUDED.vitorias,
+    top10=EXCLUDED.top10,
     kills=EXCLUDED.kills,
     dano_medio=EXCLUDED.dano_medio,
     assists=EXCLUDED.assists,
