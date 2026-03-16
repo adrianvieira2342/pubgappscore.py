@@ -304,21 +304,24 @@ if not df_bruto.empty:
         df_valid["top10"] = 0
 
     with tab1:
-        # FÓRMULA PRO: Eficiência por Partida com qualidade de combate
-        # Vitória (5.0) continua como pilar principal.
-        # Kills (0.5) e Top10 (0.5) mantidos para constância.
-        # Assists (0.3) adicionado: contribuição ofensiva que antes era ignorada.
-        # Headshots/partida (0.4): qualidade do combate, não só volume.
-        # Dano médio (0.002) mantido para consistência.
-        # Revives (0.33) mantido para reconhecer suporte mínimo.
+        # FÓRMULA PRO ATUALIZADA
+        # Win: 5.0 | Kill: 0.5 | Top10: 0.5 
+        # Assist: 0.2 | Headshot: 0.1 | Dano: 0.002 | Rev: 0.33
         f_pro = (
-            (df_valid["vitorias"]  / df_valid["partidas_calc"] * 5.0) +
-            (df_valid["kills"]     / df_valid["partidas_calc"] * 0.5) +
-            (df_valid["top10"]     / df_valid["partidas_calc"] * 0.5) +
-            (df_valid["assists"]   / df_valid["partidas_calc"] * 0.3) +
-            (df_valid["headshots"] / df_valid["partidas_calc"] * 0.4) +
+            (df_valid["vitorias"]   / df_valid["partidas_calc"] * 5.0) +
+            (df_valid["kills"]      / df_valid["partidas_calc"] * 0.5) +
+            (df_valid["top10"]      / df_valid["partidas_calc"] * 0.5) +
+            (df_valid["assists"]    / df_valid["partidas_calc"] * 0.2) +
+            (df_valid["headshots"]  / df_valid["partidas_calc"] * 0.1) +
             (df_valid["dano_medio"] * 0.002) +
-            (df_valid["revives"]   / df_valid["partidas_calc"] * 0.33)
+            (df_valid["revives"]    / df_valid["partidas_calc"] * 0.33)
+        )
+        renderizar_ranking(
+            df_valid.copy(),
+            "Score_Pro",
+            f_pro,
+            "Fórmula PRO: Foco em Eficiência por Partida. Valoriza quem ganha e mata com constância.",
+            "Σ(Win:5.0, Kill:0.5, Top10:0.5, Assist:0.2, Headshot:0.1, Dano:0.002, Rev:0.33) / Partidas"
         )
         renderizar_ranking(
             df_valid.copy(),
