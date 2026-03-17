@@ -35,87 +35,126 @@ def get(url):
     return r.json() if r.status_code == 200 else None
 
 def processar_player(conn, player_name, player_id):
+
     print(f"🔎 Processando: {player_name}")
+
     cur = conn.cursor()
     player_data = get(f"https://api.pubg.com/shards/{SHARD}/players/{player_id}")
-    if not player_data: return 0
+
+    if not player_data:
+        return 0
 
     matches = player_data["data"]["relationships"]["matches"]["data"]
+
     penalidades = 0
 
     for m in matches:
+
         match_id = m["id"]
-        
-        # Verificamos se já foi processada
-        cur.execute("SELECT 1 FROM matches_processadas WHERE match_id = %s AND player_name = %s", (match_id, player_name))
-        if cur.fetchone(): continue 
+
+        cur.execute(
+            "SELECT 1 FROM matches_processadas WHERE match_id=%s AND player_name=%s",
+            (match_id, player_name)
+        )
+
+        if cur.fetchone():
+            continue
 
         match_data = get(f"https://api.pubg.com/shards/{SHARD}/matches/{match_id}")
-        if not match_data: continue
+
+        if not match_data:
+            continue
 
         attr = match_data["data"]["attributes"]
-        if attr.get("gameMode") != "squad": continue
 
-        participants = [x for x in match_data["included"] if x["type"] == "participant"]
-        humanos = sum(1 for p in participants if p["attributes"]["stats"].get("playerId", "").startswith("account."))
-        
+        if attr.get("gameMode") != "squad":
+            continue
+
+        participants = [
+            x for x in match_data["included"]
+            if x["type"] == "participant"
+        ]
+
+        humanos = sum(
+            1 for p in participants
+            if p["attributes"]["stats"].get("playerId","").startswith("account.")
+        )
+
         if attr.get("matchType") == "casual" or humanos <= 12:
-            p_stats = next((x["attributes"]["stats"] for x in participants if x["attributes"]["stats"].get("playerId") == player_id), None)
-            
+
+            p_stats = next(
+                (
+                    x["attributes"]["stats"]
+                    for x in participants
+                    if x["attributes"]["stats"].get("playerId") == player_id
+                ),
+                None
+            )
+
             if p_stats:
-                kills = p_stats.get("kills", 0)
-                dano = p_stats.get("damageDealt", 0)
-                # Cálculo do KR e Score
+
+                kills = p_stats.get("kills",0)
+                dano = p_stats.get("damageDealt",0)
+
                 score_penalidade = (kills * 10) + (dano * 0.1)
 
-                # UPDATE COMPLETO COM CÁLCULO DE KR CORRIGIDO E TOP10
-                cur.execute("""
-                    UPDATE ranking_bot SET
-                        partidas = partidas + 1,
-                        vitorias = vitorias + %s,
-                        top10 = top10 + %s,
-                        kills = kills - %s,
-                        score = score - %s,
-                        dano_medio = dano_medio + %s,
-                        assists = assists + %s,
-                        headshots = headshots + %s,
-                        revives = revives + %s,
-                        kill_dist_max = GREATEST(kill_dist_max, %s),
-                        -- Forçamos a conversão para FLOAT para não arredondar para zero
-                        kr = CASE
-                            WHEN (partidas + 1) > 0
-                            THEN ABS(CAST((kills - %s) AS FLOAT) / (partidas + 1))
-                            ELSE 0
-                        END,
-                        atualizado_em = NOW()
-                    WHERE nick = %s
-                """, (
-                    1 if p_stats.get("winPlace") == 1 else 0,
-                    1 if p_stats.get("winPlace") <= 10 else 0,
-                    kills, score_penalidade, dano,
-                    p_stats.get("assists", 0),
-                    p_stats.get("headshotKills", 0),
-                    p_stats.get("revives", 0),
-                    p_stats.get("longestKill", 0),
+                cur.execute(
+                """
+                UPDATE ranking_bot SET
+                    partidas = partidas + 1,
+                    vitorias = vitorias + %s,
+                    top10 = top10 + %s,
+                    kills = kills - %s,
+                    score = score - %s,
+                    dano_medio = dano_medio + %s,
+                    assists = assists + %s,
+                    headshots = headshots + %s,
+                    revives = revives + %s,
+                    kill_dist_max = GREATEST(kill_dist_max,%s),
+                    kr = ABS((kills - %s)::float / NULLIF(partidas + 1,0)),
+                    atualizado_em = NOW()
+                WHERE nick = %s
+                """,
+                (
+                    1 if p_stats.get("winPlace")==1 else 0,
+                    1 if p_stats.get("winPlace")<=10 else 0,
+                    kills,
+                    score_penalidade,
+                    dano,
+                    p_stats.get("assists",0),
+                    p_stats.get("headshotKills",0),
+                    p_stats.get("revives",0),
+                    p_stats.get("longestKill",0),
                     kills,
                     player_name
-                ))
+                )
+                )
+
                 penalidades += 1
 
-        cur.execute("INSERT INTO matches_processadas (match_id, player_name) VALUES (%s, %s) ON CONFLICT DO NOTHING", (match_id, player_name))
-        conn.commit()
+        cur.execute(
+            "INSERT INTO matches_processadas (match_id,player_name) VALUES (%s,%s) ON CONFLICT DO NOTHING",
+            (match_id,player_name)
+        )
+
         time.sleep(0.5)
+
+    conn.commit()
+
     return penalidades
 
+
 if __name__ == "__main__":
+
     if not DATABASE_URL:
         print("❌ DATABASE_URL não configurado.")
     else:
+
         conn = psycopg2.connect(DATABASE_URL)
-        
-        # O histórico permanece seguro; o script apenas processa novas partidas
-        for name, pid in PLAYERS.items():
-            processar_player(conn, name, pid)
-        
+
+        for name,pid in PLAYERS.items():
+            processar_player(conn,name,pid)
+
         conn.close()
+
         print("\n✅ Concluído! Verifique seu banco agora.")
