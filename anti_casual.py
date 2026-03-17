@@ -46,6 +46,7 @@ def processar_player(conn, player_name, player_id):
     for m in matches:
         match_id = m["id"]
         
+        # Verificamos se já foi processada
         cur.execute("SELECT 1 FROM matches_processadas WHERE match_id = %s AND player_name = %s", (match_id, player_name))
         if cur.fetchone(): continue 
 
@@ -64,21 +65,28 @@ def processar_player(conn, player_name, player_id):
             if p_stats:
                 kills = p_stats.get("kills", 0)
                 dano = p_stats.get("damageDealt", 0)
+                # Cálculo do KR e Score
                 score_penalidade = (kills * 10) + (dano * 0.1)
 
+                # UPDATE COMPLETO COM CÁLCULO DE KR CORRIGIDO E TOP10
                 cur.execute("""
                     UPDATE ranking_bot SET
                         partidas = partidas + 1,
                         vitorias = vitorias + %s,
                         top10 = top10 + %s,
-                        kills = kills + %s,
-                        score = score + %s,
+                        kills = kills - %s,
+                        score = score - %s,
                         dano_medio = dano_medio + %s,
                         assists = assists + %s,
                         headshots = headshots + %s,
                         revives = revives + %s,
                         kill_dist_max = GREATEST(kill_dist_max, %s),
-                        kr = ABS(CAST(kills + %s AS FLOAT) / NULLIF(partidas + 1, 0)),
+                        -- Forçamos a conversão para FLOAT para não arredondar para zero
+                        kr = CASE
+                            WHEN (partidas + 1) > 0
+                            THEN ABS(CAST((kills - %s) AS FLOAT) / (partidas + 1))
+                            ELSE 0
+                        END,
                         atualizado_em = NOW()
                     WHERE nick = %s
                 """, (
@@ -89,7 +97,7 @@ def processar_player(conn, player_name, player_id):
                     p_stats.get("headshotKills", 0),
                     p_stats.get("revives", 0),
                     p_stats.get("longestKill", 0),
-                    kills, 
+                    kills,
                     player_name
                 ))
                 penalidades += 1
@@ -104,7 +112,10 @@ if __name__ == "__main__":
         print("❌ DATABASE_URL não configurado.")
     else:
         conn = psycopg2.connect(DATABASE_URL)
+        
+        # O histórico permanece seguro; o script apenas processa novas partidas
         for name, pid in PLAYERS.items():
             processar_player(conn, name, pid)
+        
         conn.close()
-        print("\n✅ Concluído!")
+        print("\n✅ Concluído! Verifique seu banco agora.")
