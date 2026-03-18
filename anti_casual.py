@@ -107,5 +107,79 @@ async def processar_player(session, pool, player_name, player_id):
                 dano = p_stats.get("damageDealt", 0)
                 score_penalidade = (kills * 10) + (dano * 0.1)
 
-                cur.execute("""
-                    UPDATE ranking_bot SET
+                sql = (
+                    "UPDATE ranking_bot SET "
+                    "partidas = partidas + 1, "
+                    "vitorias = vitorias + %s, "
+                    "kills = kills - %s, "
+                    "score = score - %s, "
+                    "dano_medio = dano_medio + %s, "
+                    "assists = assists + %s, "
+                    "headshots = headshots + %s, "
+                    "revives = revives + %s, "
+                    "kill_dist_max = GREATEST(kill_dist_max, %s), "
+                    "kr = ABS(CAST(kills - %s AS FLOAT) / NULLIF(partidas + 1, 0)), "
+                    "atualizado_em = NOW() "
+                    "WHERE nick = %s"
+                )
+                cur.execute(sql, (
+                    1 if p_stats.get("winPlace") == 1 else 0,
+                    kills, score_penalidade, dano,
+                    p_stats.get("assists", 0),
+                    p_stats.get("headshotKills", 0),
+                    p_stats.get("revives", 0),
+                    p_stats.get("longestKill", 0),
+                    kills,
+                    player_name
+                ))
+                penalidades += 1
+
+            cur.execute("INSERT INTO matches_processadas (match_id, player_name) VALUES (%s, %s) ON CONFLICT DO NOTHING", (match_id, player_name))
+            conn.commit()
+
+        print(f"📊 Resumo {player_name}: {penalidades} penalidade(s) aplicada(s) | "
+              f"{ignoradas_ja_processada} já processada(s) | "
+              f"{ignoradas_modo_errado} modo errado | "
+              f"{ignoradas_nao_airoyale} não airoyale")
+
+        return penalidades
+
+    finally:
+        cur.close()
+        pool.putconn(conn)
+
+async def main():
+    global sem
+    sem = asyncio.Semaphore(10)
+
+    pool = ThreadedConnectionPool(1, len(PLAYERS), DATABASE_URL)
+
+    # --- PASSO IMPORTANTE: LIMPANDO O HISTÓRICO PARA REPROCESSAR ---
+    print("🧹 Limpando histórico de partidas para reprocessar corretamente...")
+    conn = pool.getconn()
+    with conn.cursor() as c:
+        c.execute("DELETE FROM matches_processadas;")
+        c.execute(
+            "UPDATE ranking_bot SET "
+            "partidas=0, vitorias=0, kills=0, score=0, "
+            "dano_medio=0, assists=0, headshots=0, "
+            "revives=0, kill_dist_max=0, kr=0;"
+        )
+    conn.commit()
+    pool.putconn(conn)
+
+    async with aiohttp.ClientSession() as session:
+        tasks = [
+            processar_player(session, pool, name, pid)
+            for name, pid in PLAYERS.items()
+        ]
+        resultados = await asyncio.gather(*tasks)
+
+    pool.closeall()
+    print(f"\n✅ Concluído! Total de penalidades aplicadas: {sum(resultados)}")
+
+if __name__ == "__main__":
+    if not DATABASE_URL:
+        print("❌ DATABASE_URL não configurado.")
+    else:
+        asyncio.run(main())
