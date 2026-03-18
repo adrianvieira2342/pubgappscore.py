@@ -52,30 +52,45 @@ def get(url):
     return None
 
 def processar_player(conn, player_name, player_id):
-    print(f"🔎 Processando: {player_name}")
+    print(f"\n🔎 Processando: {player_name}")
     cur = conn.cursor()
     player_data = get(f"https://api.pubg.com/shards/{SHARD}/players/{player_id}")
     if not player_data: return 0
 
     matches = player_data["data"]["relationships"]["matches"]["data"]
+    print(f"📋 {player_name}: {len(matches)} partidas encontradas na API")
+
     penalidades = 0
+    ignoradas_ja_processada = 0
+    ignoradas_modo_errado = 0
+    ignoradas_nao_casual = 0
 
     for m in matches:
         match_id = m["id"]
 
         cur.execute("SELECT 1 FROM matches_processadas WHERE match_id = %s AND player_name = %s", (match_id, player_name))
-        if cur.fetchone(): continue
+        if cur.fetchone():
+            print(f"   ⏭️  {match_id} → já processada, ignorando")
+            ignoradas_ja_processada += 1
+            continue
 
         match_data = get(f"https://api.pubg.com/shards/{SHARD}/matches/{match_id}")
         if not match_data: continue
 
         attr = match_data["data"]["attributes"]
-        if attr.get("gameMode") != "squad": continue
+
+        if attr.get("gameMode") != "squad":
+            print(f"   ❌ {match_id} → modo errado ({attr.get('gameMode')}), ignorando")
+            ignoradas_modo_errado += 1
+            cur.execute("INSERT INTO matches_processadas (match_id, player_name) VALUES (%s, %s) ON CONFLICT DO NOTHING", (match_id, player_name))
+            conn.commit()
+            continue
 
         participants = [x for x in match_data["included"] if x["type"] == "participant"]
         humanos = sum(1 for p in participants if p["attributes"]["stats"].get("playerId", "").startswith("account."))
 
         if attr.get("matchType") == "casual" or humanos <= 12:
+            print(f"   ✅ {match_id} → casual/bots (matchType={attr.get('matchType')}, humanos={humanos}), processando")
             p_stats = next((x["attributes"]["stats"] for x in participants if x["attributes"]["stats"].get("playerId") == player_id), None)
 
             if p_stats:
@@ -108,10 +123,19 @@ def processar_player(conn, player_name, player_id):
                     player_name
                 ))
                 penalidades += 1
+        else:
+            print(f"   ❌ {match_id} → não casual/sem bots (matchType={attr.get('matchType')}, humanos={humanos}), ignorando")
+            ignoradas_nao_casual += 1
 
         cur.execute("INSERT INTO matches_processadas (match_id, player_name) VALUES (%s, %s) ON CONFLICT DO NOTHING", (match_id, player_name))
         conn.commit()
         time.sleep(0.5)
+
+    print(f"📊 Resumo {player_name}: {penalidades} penalidade(s) aplicada(s) | "
+          f"{ignoradas_ja_processada} já processada(s) | "
+          f"{ignoradas_modo_errado} modo errado | "
+          f"{ignoradas_nao_casual} não casual/sem bots")
+
     return penalidades
 
 if __name__ == "__main__":
@@ -132,8 +156,9 @@ if __name__ == "__main__":
         #    """)
         #conn.commit()
 
+        total_geral = 0
         for name, pid in PLAYERS.items():
-            processar_player(conn, name, pid)
+            total_geral += processar_player(conn, name, pid)
 
         conn.close()
-        print("\n✅ Concluído! Verifique seu banco agora.")
+        print(f"\n✅ Concluído! Total de penalidades aplicadas: {total_geral}")
