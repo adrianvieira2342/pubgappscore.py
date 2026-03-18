@@ -260,33 +260,63 @@ if not df_bruto.empty:
     df_valid["partidas_calc"] = df_valid["partidas"].replace(0, 1)
 
     with tab1:
-        f_pro = (df_valid["kr"] * 40) + (df_valid["dano_medio"] / 8) + ((df_valid["vitorias"] / df_valid["partidas_calc"]) * 500)
+        f_pro = (
+            (df_valid["vitorias"] * 5) +
+            (df_valid["kills"] * 0.5) +
+            (df_valid["assists"] * 0.2) +
+            (df_valid["headshots"] * 0.2) +
+            (df_valid["revives"] * 0.33) +
+            (df_valid["dano_medio"] * 0.001) +
+            (df_valid["top10"] * 0.5) +
+            (df_valid["kr"] * 10) +
+            (df_valid["kill_dist_max"] * 0.01)
+        )
         renderizar_ranking(
             df_valid.copy(),
             "Score_Pro",
             f_pro,
-            "Fórmula PRO: Valoriza equilíbrio entre sobrevivência e agressividade. Foca em K/R alto, dano consistente e taxa de vitória.",
-            "(KR × 40) + (Dano Médio / 8) + (Win Rate × 500)"
+            "Fórmula PRO: Equilíbrio entre todas as estatísticas. Valoriza vitórias, kills, precisão, suporte e consistência.",
+            "(Vitórias × 5) + (Kills × 0.5) + (Assists × 0.2) + (Headshots × 0.2) + (Revives × 0.33) + (Dano Médio × 0.001) + (Top10 × 0.5) + (KR × 10) + (Kill Dist Máx × 0.01)"
         )
 
     with tab2:
-        f_team = ((df_valid["vitorias"] / df_valid["partidas_calc"]) * 1000) + ((df_valid["revives"] / df_valid["partidas_calc"]) * 50) + ((df_valid["assists"] / df_valid["partidas_calc"]) * 35)
+        f_team = (
+            (df_valid["vitorias"] * 8) +
+            (df_valid["kills"] * 0.3) +
+            (df_valid["kr"] * 5) +
+            (df_valid["assists"] * 1.5) +
+            (df_valid["headshots"] * 0.1) +
+            (df_valid["revives"] * 3) +
+            (df_valid["dano_medio"] * 0.002) +
+            (df_valid["top10"] * 1) +
+            (df_valid["kill_dist_max"] * 0.005)
+        )
         renderizar_ranking(
             df_valid.copy(),
             "Score_Team",
             f_team,
-            "Fórmula TEAM: Foco total no jogo coletivo. Pontua mais quem revive aliados, dá assistências e garante a vitória.",
-            "(Win Rate × 1000) + (Média Revives × 50) + (Média Assists × 35)"
+            "Fórmula TEAM: Foco no jogo coletivo. Valoriza vitórias, revives, assists e top10.",
+            "(Vitórias × 8) + (Kills × 0.3) + (KR × 5) + (Assists × 1.5) + (Headshots × 0.1) + (Revives × 3) + (Dano Médio × 0.002) + (Top10 × 1) + (Kill Dist Máx × 0.005)"
         )
 
     with tab3:
-        f_elite = (df_valid["kr"] * 50) + ((df_valid["headshots"] / df_valid["partidas_calc"]) * 60) + (df_valid["dano_medio"] / 5)
+        f_elite = (
+            (df_valid["kr"] * 20) +
+            (df_valid["kills"] * 1) +
+            (df_valid["vitorias"] * 2) +
+            (df_valid["assists"] * 0.1) +
+            (df_valid["headshots"] * 1.5) +
+            (df_valid["revives"] * 0.5) +
+            (df_valid["dano_medio"] * 0.005) +
+            (df_valid["top10"] * 0.3) +
+            (df_valid["kill_dist_max"] * 0.05)
+        )
         renderizar_ranking(
             df_valid.copy(),
             "Score_Elite",
             f_elite,
-            "Fórmula ELITE: Prioriza K/R, precisão de Headshots e volume de dano.",
-            "(KR × 50) + (Média Headshots × 60) + (Dano Médio / 5)"
+            "Fórmula ELITE: Prioriza KR, precisão de headshots, kills e alcance máximo.",
+            "(KR × 20) + (Kills × 1) + (Vitórias × 2) + (Assists × 0.1) + (Headshots × 1.5) + (Revives × 0.5) + (Dano Médio × 0.005) + (Top10 × 0.3) + (Kill Dist Máx × 0.05)"
         )
 
     with tab4:
@@ -301,3 +331,43 @@ if not df_bruto.empty:
                 )
             else:
                 st.info("Nenhuma penalidade registrada.")
+
+    st.markdown("---")
+    st.markdown("### 📊 Performance Comparativa (Top 5)")
+
+    if not df_valid.empty:
+        col_g1, col_g2 = st.columns(2)
+        with col_g1:
+            st.write("🔥 **Dano Médio**")
+            st.bar_chart(df_valid.nlargest(5, 'dano_medio').set_index('nick')['dano_medio'], color="#ff4b4b", horizontal=True)
+            st.write("💀 **Headshots Totais**")
+            st.bar_chart(df_valid.nlargest(5, 'headshots').set_index('nick')['headshots'], color="#0078ff", horizontal=True)
+        with col_g2:
+            st.write("🎯 **Kills Totais**")
+            st.bar_chart(df_valid.nlargest(5, 'kills').set_index('nick')['kills'], color="#f63366", horizontal=True)
+            st.write("🏆 **Vitórias Totais**")
+            st.bar_chart(df_valid.nlargest(5, 'vitorias').set_index('nick')['vitorias'], color="#00cc66", horizontal=True)
+
+        st.markdown("#### 🚩 Recordes Individuais")
+        r1, r2, r3, r4 = st.columns(4)
+        with r1:
+            top = df_valid.loc[df_valid['kill_dist_max'].idxmax()]
+            st.info(f"**Sniper de Elite**\n\n{top['nick']}\n\n**{top['kill_dist_max']:.1f}m**")
+        with r2:
+            top = df_valid.loc[df_valid['revives'].idxmax()]
+            st.success(f"**Anjo da Guarda**\n\n{top['nick']}\n\n**{int(top['revives'])}** Revives")
+        with r3:
+            top = df_valid.loc[df_valid['assists'].idxmax()]
+            st.warning(f"**Braço Direito**\n\n{top['nick']}\n\n**{int(top['assists'])}** Assists")
+        with r4:
+            top = df_valid.loc[df_valid['partidas'].idxmax()]
+            st.error(f"**Viciado no Drop**\n\n{top['nick']}\n\n**{int(top['partidas'])}** Partidas")
+
+    st.markdown("---")
+    st.markdown(
+        "<div style='text-align:center;color:gray;padding:20px;'>📊 <b>By Adriano Vieira</b></div>",
+        unsafe_allow_html=True
+    )
+
+else:
+    st.warning("Conectado ao banco. Aguardando dados...")
