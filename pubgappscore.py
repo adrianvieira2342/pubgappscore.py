@@ -300,4 +300,4 @@ if not df_bruto.empty:
                     "Anti-Casual: Jogadores penalizados por matar bots em partidas no modo casual."
                 )
             else:
-                st.info("Nen
+                st.info("Nenhuma penalidade registrada.")
