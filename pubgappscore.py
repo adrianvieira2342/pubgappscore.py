@@ -157,10 +157,13 @@ if not df_bruto.empty:
         return [""] * len(row)
 
     def aplicar_decaimento(df_local, col_score):
-        df_local["ultima_atualizacao"] = pd.to_datetime(df_local["ultima_atualizacao"])
-        hoje = pd.Timestamp.now()
-        df_local["dias_inativo"] = (hoje - df_local["ultima_atualizacao"]).dt.days
-        df_local["semanas_inativo"] = df_local["dias_inativo"] // 7
+        hoje = pd.Timestamp.utcnow()
+        df_local["updated_at"] = pd.to_datetime(df_local["updated_at"], utc=True, errors="coerce")
+        # Para jogadores sem updated_at, usa atualizado_em como fallback
+        df_local["atualizado_em"] = pd.to_datetime(df_local["atualizado_em"], utc=True, errors="coerce")
+        df_local["data_referencia"] = df_local["updated_at"].fillna(df_local["atualizado_em"])
+        df_local["dias_inativo"] = (hoje - df_local["data_referencia"]).dt.days.fillna(0)
+        df_local["semanas_inativo"] = (df_local["dias_inativo"] // 7).astype(int)
         df_local[col_score] = df_local[col_score] * (0.85 ** df_local["semanas_inativo"])
         return df_local
 
