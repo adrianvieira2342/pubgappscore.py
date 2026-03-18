@@ -84,6 +84,7 @@ def processar_player(conn, player_name, player_id):
             ignoradas_modo_errado += 1
             cur.execute("INSERT INTO matches_processadas (match_id, player_name) VALUES (%s, %s) ON CONFLICT DO NOTHING", (match_id, player_name))
             conn.commit()
+            time.sleep(0.5)
             continue
 
         participants = [x for x in match_data["included"] if x["type"] == "participant"]
@@ -123,12 +124,16 @@ def processar_player(conn, player_name, player_id):
                     player_name
                 ))
                 penalidades += 1
+
+            # Só marca como processada após passar pelo filtro casual
+            cur.execute("INSERT INTO matches_processadas (match_id, player_name) VALUES (%s, %s) ON CONFLICT DO NOTHING", (match_id, player_name))
+            conn.commit()
+
         else:
             print(f"   ❌ {match_id} → não casual/sem bots (matchType={attr.get('matchType')}, humanos={humanos}), ignorando")
             ignoradas_nao_casual += 1
+            # Não marca como processada — será reavaliada nas próximas execuções
 
-        cur.execute("INSERT INTO matches_processadas (match_id, player_name) VALUES (%s, %s) ON CONFLICT DO NOTHING", (match_id, player_name))
-        conn.commit()
         time.sleep(0.5)
 
     print(f"📊 Resumo {player_name}: {penalidades} penalidade(s) aplicada(s) | "
@@ -145,16 +150,16 @@ if __name__ == "__main__":
         conn = psycopg2.connect(DATABASE_URL)
 
         # --- PASSO IMPORTANTE: LIMPANDO O HISTÓRICO PARA REPROCESSAR ---
-        #print("🧹 Limpando dados antigos para atualizar colunas...")
-        #with conn.cursor() as c:
-        #    c.execute("DELETE FROM matches_processadas;")
-        #    c.execute("""
-        #        UPDATE ranking_bot SET 
-        #        partidas=0, vitorias=0, kills=0, score=0, 
-        #        dano_medio=0, assists=0, headshots=0, 
-        #        revives=0, kill_dist_max=0, kr=0;
-        #    """)
-        #conn.commit()
+        print("🧹 Limpando histórico de partidas para reprocessar corretamente...")
+        with conn.cursor() as c:
+            c.execute("DELETE FROM matches_processadas;")
+            c.execute("""
+                UPDATE ranking_bot SET 
+                partidas=0, vitorias=0, kills=0, score=0, 
+                dano_medio=0, assists=0, headshots=0, 
+                revives=0, kill_dist_max=0, kr=0;
+            """)
+        conn.commit()
 
         total_geral = 0
         for name, pid in PLAYERS.items():
