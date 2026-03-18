@@ -275,7 +275,7 @@ if not df_bruto.empty:
             df_valid.copy(),
             "Score_Pro",
             f_pro,
-            "Fórmula PRO: Equilíbrio entre todas as estatísticas por partida. Valoriza consistência em vitórias, kills, precisão, suporte e dano.",
+            "Fórmula PRO: Equilíbrio entre sobrevivência e agressividade. Valoriza consistência em vitórias, kills, precisão, suporte e dano.",
             "(Win Rate × 5) + (Kills/P × 0.5) + (Assists/P × 0.1) + (Headshots/P × 0.2) + (Revives/P × 0.33) + (Dano Médio × 0.001)"
         )
 
