@@ -3,7 +3,7 @@ import os
 import time
 import requests
 import psycopg2
-from datetime import datetime
+from datetime import datetime, date, timedelta
 from concurrent.futures import ThreadPoolExecutor, as_completed
 
 DATABASE_URL = os.environ.get("DATABASE_URL")
@@ -38,6 +38,10 @@ def dividir_lista(lista, tamanho):
     for i in range(0, len(lista), tamanho):
         yield lista[i:i + tamanho]
 
+def get_segunda_feira():
+    hoje = date.today()
+    return hoje - timedelta(days=hoje.weekday())
+
 inicio_total = time.time()
 print("🚀 Detectando temporada...")
 
@@ -50,13 +54,9 @@ current_season_id = next(
 
 print(f"📅 Temporada atual: {current_season_id}")
 
-# ===============================
-# BUSCAR IDs E MATCH MAIS RECENTE EM LOTE
-# ===============================
-
 print("🔎 Buscando IDs e última partida em lote...")
 player_ids = {}
-player_last_match = {}  # nick -> match_id mais recente
+player_last_match = {}
 
 for grupo in dividir_lista(players, 10):
     nomes = ",".join(grupo)
@@ -72,10 +72,6 @@ for grupo in dividir_lista(players, 10):
                 player_last_match[nick] = matches[0]["id"]
 
 print(f"✅ {len(player_ids)} IDs encontrados.")
-
-# ===============================
-# BUSCAR DATA DA ÚLTIMA PARTIDA
-# ===============================
 
 print("📅 Buscando data da última partida...")
 player_updated_at = {}
@@ -99,10 +95,6 @@ with ThreadPoolExecutor(max_workers=5) as executor:
         nick, data = future.result()
         player_updated_at[nick] = data
         print(f"📅 {nick} | última partida: {data}")
-
-# ===============================
-# BUSCA PARALELA DE STATS
-# ===============================
 
 def buscar_stats(player, p_id):
     url = f"{BASE_URL}/players/{p_id}/seasons/{current_season_id}"
@@ -160,6 +152,9 @@ try:
     conn = psycopg2.connect(DATABASE_URL)
     cursor = conn.cursor()
 
+    # ===============================
+    # UPDATE RANKING_SQUAD
+    # ===============================
     sql = """
     INSERT INTO ranking_squad
     (nick, partidas, kr, vitorias, kills, dano_medio,
@@ -179,8 +174,40 @@ try:
     atualizado_em=EXCLUDED.atualizado_em,
     updated_at=EXCLUDED.updated_at
     """
-
     cursor.executemany(sql, resultados)
+
+    # ===============================
+    # SNAPSHOT SEMANAL
+    # ===============================
+    semana_atual = get_segunda_feira()
+    print(f"📊 Salvando snapshot semanal para semana de {semana_atual}...")
+
+    sql_semanal = """
+    INSERT INTO ranking_semanal
+    (nick, semana, partidas, kr, vitorias, kills, dano_medio,
+     assists, headshots, revives, kill_dist_max, top10, atualizado_em)
+    VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+    ON CONFLICT (nick, semana) DO UPDATE SET
+    partidas=EXCLUDED.partidas,
+    kr=EXCLUDED.kr,
+    vitorias=EXCLUDED.vitorias,
+    kills=EXCLUDED.kills,
+    dano_medio=EXCLUDED.dano_medio,
+    assists=EXCLUDED.assists,
+    headshots=EXCLUDED.headshots,
+    revives=EXCLUDED.revives,
+    kill_dist_max=EXCLUDED.kill_dist_max,
+    top10=EXCLUDED.top10,
+    atualizado_em=EXCLUDED.atualizado_em
+    """
+
+    resultados_semanal = [
+        (r[0], semana_atual, r[1], r[2], r[3], r[4],
+         r[5], r[6], r[7], r[8], r[9], r[10], r[11])
+        for r in resultados
+    ]
+
+    cursor.executemany(sql_semanal, resultados_semanal)
     conn.commit()
 
     cursor.close()
