@@ -16,7 +16,7 @@ jobs:
         with:
           python-version: '3.9'
       - name: Install dependencies
-        run: pip install requests psycopg2-binary aiohttp plotly
+        run: pip install requests psycopg2-binary aiohttp
       - name: Run Anti-Casual Script
         env:
           PUBG_API_KEY: ${{ secrets.PUBG_API_KEY }}
