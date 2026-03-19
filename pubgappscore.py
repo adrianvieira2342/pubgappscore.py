@@ -59,6 +59,19 @@ def get_data(table_name="v_ranking_squad_completo"):
         st.error(f"Erro na conexão com o banco: {e}")
         return pd.DataFrame()
 
+def get_data_semanal():
+    try:
+        conn = st.connection(
+            "postgresql",
+            type="sql",
+            url=st.secrets["DATABASE_URL"]
+        )
+        df = conn.query("SELECT * FROM ranking_semanal ORDER BY semana DESC", ttl=0)
+        return df
+    except Exception as e:
+        st.error(f"Erro ao buscar dados semanais: {e}")
+        return pd.DataFrame()
+
 def processar_ranking_completo(df_ranking, col_score):
     total = len(df_ranking)
     novos_nicks = []
@@ -108,6 +121,7 @@ st.markdown(
 
 df_bruto = get_data("v_ranking_squad_completo")
 df_bots_raw = get_data("ranking_bot")
+df_semanal = get_data_semanal()
 
 if not df_bruto.empty:
     if "ultima_atualizacao" in df_bruto.columns:
@@ -159,7 +173,6 @@ if not df_bruto.empty:
     def aplicar_decaimento(df_local, col_score):
         hoje = pd.Timestamp.utcnow()
         df_local["updated_at"] = pd.to_datetime(df_local["updated_at"], utc=True, errors="coerce")
-        # Para jogadores sem updated_at, usa atualizado_em como fallback
         df_local["atualizado_em"] = pd.to_datetime(df_local["atualizado_em"], utc=True, errors="coerce")
         df_local["data_referencia"] = df_local["updated_at"].fillna(df_local["atualizado_em"])
         df_local["dias_inativo"] = (hoje - df_local["data_referencia"]).dt.days.fillna(0)
@@ -324,23 +337,72 @@ if not df_bruto.empty:
             else:
                 st.info("Nenhuma penalidade registrada.")
 
+    # ===============================
+    # PERFORMANCE COMPARATIVA SEMANAL
+    # ===============================
     st.markdown("---")
-    st.markdown("### 📊 Performance Comparativa (Top 5)")
+    st.markdown("### 📊 Performance Comparativa Semanal")
 
-    if not df_valid.empty:
+    if not df_semanal.empty:
+        df_semanal["semana"] = pd.to_datetime(df_semanal["semana"])
+        semanas_disponiveis = sorted(df_semanal["semana"].unique(), reverse=True)
+        semanas_labels = {s: f"Semana de {pd.Timestamp(s).strftime('%d/%m/%Y')}" for s in semanas_disponiveis}
+
+        semana_selecionada = st.selectbox(
+            "Selecione a semana:",
+            options=semanas_disponiveis,
+            format_func=lambda s: semanas_labels[s]
+        )
+
+        df_semana_atual = df_semanal[df_semanal["semana"] == semana_selecionada].copy()
+
+        # Busca semana anterior para calcular diferença
+        idx_semana = list(semanas_disponiveis).index(semana_selecionada)
+        if idx_semana + 1 < len(semanas_disponiveis):
+            semana_anterior = semanas_disponiveis[idx_semana + 1]
+            df_semana_anterior = df_semanal[df_semanal["semana"] == semana_anterior].copy()
+            df_semana_anterior = df_semana_anterior.set_index("nick")
+
+            def calcular_diff(row, col):
+                nick = row["nick"]
+                if nick in df_semana_anterior.index:
+                    return row[col] - df_semana_anterior.loc[nick, col]
+                return row[col]
+
+            for col in ["partidas", "vitorias", "kills", "assists", "headshots", "revives", "dano_medio", "top10"]:
+                df_semana_atual[col] = df_semana_atual.apply(lambda r: calcular_diff(r, col), axis=1)
+        else:
+            st.caption("ℹ️ Primeira semana registrada — exibindo valores absolutos.")
+
         col_g1, col_g2 = st.columns(2)
         with col_g1:
             st.write("🔥 **Dano Médio**")
-            st.bar_chart(df_valid.nlargest(5, 'dano_medio').set_index('nick')['dano_medio'], color="#ff4b4b", horizontal=True)
-            st.write("💀 **Headshots Totais**")
-            st.bar_chart(df_valid.nlargest(5, 'headshots').set_index('nick')['headshots'], color="#0078ff", horizontal=True)
+            st.bar_chart(
+                df_semana_atual.sort_values("dano_medio", ascending=False).set_index("nick")["dano_medio"],
+                color="#ff4b4b", horizontal=True
+            )
+            st.write("💀 **Headshots**")
+            st.bar_chart(
+                df_semana_atual.sort_values("headshots", ascending=False).set_index("nick")["headshots"],
+                color="#0078ff", horizontal=True
+            )
         with col_g2:
-            st.write("🎯 **Kills Totais**")
-            st.bar_chart(df_valid.nlargest(5, 'kills').set_index('nick')['kills'], color="#f63366", horizontal=True)
-            st.write("🏆 **Vitórias Totais**")
-            st.bar_chart(df_valid.nlargest(5, 'vitorias').set_index('nick')['vitorias'], color="#00cc66", horizontal=True)
+            st.write("🎯 **Kills**")
+            st.bar_chart(
+                df_semana_atual.sort_values("kills", ascending=False).set_index("nick")["kills"],
+                color="#f63366", horizontal=True
+            )
+            st.write("🏆 **Vitórias**")
+            st.bar_chart(
+                df_semana_atual.sort_values("vitorias", ascending=False).set_index("nick")["vitorias"],
+                color="#00cc66", horizontal=True
+            )
 
-        st.markdown("#### 🚩 Recordes Individuais")
+    else:
+        st.info("Nenhum dado semanal disponível ainda. Aguarde o próximo sync.")
+
+    st.markdown("#### 🚩 Recordes Individuais")
+    if not df_valid.empty:
         r1, r2, r3, r4 = st.columns(4)
         with r1:
             top = df_valid.loc[df_valid['kill_dist_max'].idxmax()]
