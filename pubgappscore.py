@@ -361,51 +361,65 @@ if not df_bruto.empty:
                 st.info("Nenhuma penalidade registrada.")
 
     # ===============================
-    # PERFORMANCE COMPARATIVA SEMANAL
+    # PERFORMANCE COMPARATIVA
     # ===============================
     st.markdown("---")
-    st.markdown("### 📊 Performance Comparativa Semanal")
+    st.markdown("### 📊 Performance Comparativa")
 
-    if not df_semanal.empty:
-        df_semanal["semana"] = pd.to_datetime(df_semanal["semana"])
-        semanas_disponiveis = sorted(df_semanal["semana"].unique(), reverse=True)
-        semanas_labels = {s: f"Semana de {pd.Timestamp(s).strftime('%d/%m/%Y')}" for s in semanas_disponiveis}
+    opcao_periodo = st.radio(
+        "Selecione o período:",
+        options=["📅 Por Semana", "🏆 Temporada Completa"],
+        horizontal=True
+    )
 
-        semana_selecionada = st.selectbox(
-            "Selecione a semana:",
-            options=semanas_disponiveis,
-            format_func=lambda s: semanas_labels[s]
-        )
+    if opcao_periodo == "📅 Por Semana":
+        if not df_semanal.empty:
+            df_semanal["semana"] = pd.to_datetime(df_semanal["semana"])
+            semanas_disponiveis = sorted(df_semanal["semana"].unique(), reverse=True)
+            semanas_labels = {s: f"Semana de {pd.Timestamp(s).strftime('%d/%m/%Y')}" for s in semanas_disponiveis}
 
-        df_semana_atual = df_semanal[df_semanal["semana"] == semana_selecionada].copy()
+            semana_selecionada = st.selectbox(
+                "Selecione a semana:",
+                options=semanas_disponiveis,
+                format_func=lambda s: semanas_labels[s]
+            )
 
-        idx_semana = list(semanas_disponiveis).index(semana_selecionada)
-        if idx_semana + 1 < len(semanas_disponiveis):
-            semana_anterior = semanas_disponiveis[idx_semana + 1]
-            df_semana_anterior = df_semanal[df_semanal["semana"] == semana_anterior].copy()
-            df_semana_anterior = df_semana_anterior.set_index("nick")
+            df_semana_atual = df_semanal[df_semanal["semana"] == semana_selecionada].copy()
 
-            def calcular_diff(row, col):
-                nick = row["nick"]
-                if nick in df_semana_anterior.index:
-                    return row[col] - df_semana_anterior.loc[nick, col]
-                return row[col]
+            idx_semana = list(semanas_disponiveis).index(semana_selecionada)
+            if idx_semana + 1 < len(semanas_disponiveis):
+                semana_anterior = semanas_disponiveis[idx_semana + 1]
+                df_semana_anterior = df_semanal[df_semanal["semana"] == semana_anterior].copy()
+                df_semana_anterior = df_semana_anterior.set_index("nick")
 
-            for col in ["partidas", "vitorias", "kills", "assists", "headshots", "revives", "dano_medio", "top10"]:
-                df_semana_atual[col] = df_semana_atual.apply(lambda r: calcular_diff(r, col), axis=1)
+                def calcular_diff(row, col):
+                    nick = row["nick"]
+                    if nick in df_semana_anterior.index:
+                        return row[col] - df_semana_anterior.loc[nick, col]
+                    return row[col]
+
+                for col in ["partidas", "vitorias", "kills", "assists", "headshots", "revives", "dano_medio", "top10"]:
+                    df_semana_atual[col] = df_semana_atual.apply(lambda r: calcular_diff(r, col), axis=1)
+            else:
+                st.caption("📊 Estatísticas da Semana")
+
+            df_graf = df_semana_atual
+
         else:
-            st.caption("📊 Estatísticas da Semana")
-
-        col_g1, col_g2 = st.columns(2)
-        with col_g1:
-            grafico_horizontal(df_semana_atual, "dano_medio", "🔥 Dano Médio", "#ff4b4b")
-            grafico_horizontal(df_semana_atual, "headshots", "💀 Headshots", "#0078ff")
-        with col_g2:
-            grafico_horizontal(df_semana_atual, "kills", "🎯 Kills", "#f63366")
-            grafico_horizontal(df_semana_atual, "vitorias", "🏆 Vitórias", "#00cc66")
+            st.info("Nenhum dado semanal disponível ainda. Aguarde o próximo sync.")
+            df_graf = None
 
     else:
-        st.info("Nenhum dado semanal disponível ainda. Aguarde o próximo sync.")
+        df_graf = df_valid.copy()
+
+    if df_graf is not None and not df_graf.empty:
+        col_g1, col_g2 = st.columns(2)
+        with col_g1:
+            grafico_horizontal(df_graf, "dano_medio", "🔥 Dano Médio", "#ff4b4b")
+            grafico_horizontal(df_graf, "headshots", "💀 Headshots", "#0078ff")
+        with col_g2:
+            grafico_horizontal(df_graf, "kills", "🎯 Kills", "#f63366")
+            grafico_horizontal(df_graf, "vitorias", "🏆 Vitórias", "#00cc66")
 
     st.markdown("#### 🚩 Recordes Individuais")
     if not df_valid.empty:
