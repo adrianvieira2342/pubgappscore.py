@@ -416,7 +416,7 @@ if not df_bruto.empty:
                         return row[col] - df_semana_anterior.loc[nick, col]
                     return 0
 
-                for col in ["partidas", "vitorias", "kills", "assists", "headshots", "revives", "dano_medio", "top10"]:
+                for col in ["partidas", "vitorias", "kills", "assists", "headshots", "revives", "top10"]:
                     df_semana_atual[col] = df_semana_atual.apply(lambda r: calcular_diff(r, col), axis=1)
             else:
                 st.caption("📊 Estatísticas da Semana")
@@ -437,7 +437,7 @@ if not df_bruto.empty:
             grafico_horizontal(df_graf, "headshots", "💀 Headshots", "#0078ff")
         with col_g2:
             grafico_horizontal(df_graf, "vitorias", "🏆 Vitórias", "#00cc66")
-            grafico_horizontal(df_graf, "dano_medio", "🔥 Dano Médio", "#ff4b4b")
+            grafico_horizontal(df_graf[df_graf["kills"] > 0], "dano_medio", "🔥 Dano Médio", "#ff4b4b")
 
     st.markdown("#### 🚩 Recordes Individuais")
     if not df_valid.empty:
