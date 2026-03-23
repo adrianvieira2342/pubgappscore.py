@@ -5,9 +5,11 @@ import subprocess
 import sys
 import plotly.express as px
 from datetime import datetime
-import locale
-
-locale.setlocale(locale.LC_TIME, "pt_BR.UTF-8")
+MESES_PT = {
+    1: "janeiro", 2: "fevereiro", 3: "março", 4: "abril",
+    5: "maio", 6: "junho", 7: "julho", 8: "agosto",
+    9: "setembro", 10: "outubro", 11: "novembro", 12: "dezembro"
+}
 
 if "ranking_atualizado" not in st.session_state:
     try:
@@ -383,7 +385,7 @@ if not df_bruto.empty:
             def formatar_semana(s):
                 fim = pd.Timestamp(s) + pd.Timedelta(days=6)
                 num_semana = (fim.day - 1) // 7 + 1
-                mes = fim.strftime("%B %Y")
+                mes = f"{MESES_PT[fim.month]} {fim.year}"
                 return f"Semana #{num_semana} · {mes}"
 
             semanas_labels = {s: formatar_semana(s) for s in semanas_disponiveis}
