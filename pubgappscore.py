@@ -419,9 +419,11 @@ if not df_bruto.empty:
                 for col in ["partidas", "vitorias", "kills", "assists", "headshots", "revives", "top10"]:
                     df_semana_atual[col] = df_semana_atual.apply(lambda r: calcular_diff(r, col), axis=1)
 
+                df_semana_atual["kills_delta"] = df_semana_atual["kills"]
                 df_semana_atual["dano_medio"] = df_semana_atual.apply(
-                    lambda r: r["dano_medio"] if calcular_diff(r, "kills") > 0 else 0, axis=1
+                    lambda r: r["dano_medio"] if r["kills_delta"] > 0 else 0, axis=1
                 )
+                df_semana_atual = df_semana_atual.drop(columns=["kills_delta"])
             else:
                 st.caption("📊 Estatísticas da Semana")
 
