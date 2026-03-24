@@ -180,7 +180,45 @@ try:
     # SNAPSHOT SEMANAL
     # ===============================
     semana_atual = get_segunda_feira()
+    semana_anterior = semana_atual - timedelta(weeks=1)
     print(f"📊 Salvando snapshot semanal para semana de {semana_atual}...")
+
+    # Verifica se é o primeiro sync da semana atual
+    cursor.execute(
+        "SELECT COUNT(*) FROM ranking_semanal WHERE semana = %s",
+        (semana_atual,)
+    )
+    ja_existe_semana_atual = cursor.fetchone()[0] > 0
+
+    # Se for o primeiro sync da semana, atualiza a semana anterior com os valores
+    # atuais da API para garantir que o delta comece do zero corretamente
+    if not ja_existe_semana_atual:
+        print(f"🔄 Primeiro sync da semana. Atualizando snapshot de {semana_anterior}...")
+        sql_atualiza_anterior = """
+        INSERT INTO ranking_semanal
+        (nick, semana, partidas, kr, vitorias, kills, dano_medio,
+         assists, headshots, revives, kill_dist_max, top10, atualizado_em)
+        VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+        ON CONFLICT (nick, semana) DO UPDATE SET
+        partidas=EXCLUDED.partidas,
+        kr=EXCLUDED.kr,
+        vitorias=EXCLUDED.vitorias,
+        kills=EXCLUDED.kills,
+        dano_medio=EXCLUDED.dano_medio,
+        assists=EXCLUDED.assists,
+        headshots=EXCLUDED.headshots,
+        revives=EXCLUDED.revives,
+        kill_dist_max=EXCLUDED.kill_dist_max,
+        top10=EXCLUDED.top10,
+        atualizado_em=EXCLUDED.atualizado_em
+        """
+        resultados_anterior = [
+            (r[0], semana_anterior, r[1], r[2], r[3], r[4],
+             r[5], r[6], r[7], r[8], r[9], r[10], r[11])
+            for r in resultados
+        ]
+        cursor.executemany(sql_atualiza_anterior, resultados_anterior)
+        print(f"✅ Snapshot de {semana_anterior} atualizado como âncora.")
 
     sql_semanal = """
     INSERT INTO ranking_semanal
