@@ -109,7 +109,6 @@ def buscar_stats(player, p_id):
     ultima_partida = player_updated_at.get(player, None)
 
     if partidas == 0:
-        # Se tiver data da última partida, atualiza só o updated_at no banco
         if ultima_partida:
             print(f"⚠️ {player} sem partidas na API — atualizando apenas updated_at: {ultima_partida}")
             return ("only_date", player, ultima_partida)
@@ -183,7 +182,10 @@ try:
     revives=EXCLUDED.revives,
     kill_dist_max=EXCLUDED.kill_dist_max,
     top10=EXCLUDED.top10,
-    atualizado_em=EXCLUDED.atualizado_em,
+    atualizado_em = CASE
+        WHEN EXCLUDED.partidas > 0 THEN EXCLUDED.atualizado_em
+        ELSE ranking_squad.atualizado_em
+    END,
     updated_at=EXCLUDED.updated_at
     """
     cursor.executemany(sql, resultados)
