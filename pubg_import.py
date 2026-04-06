@@ -106,7 +106,14 @@ def buscar_stats(player, p_id):
     stats = res.json()["data"]["attributes"]["gameModeStats"].get("squad", {})
     partidas = stats.get("roundsPlayed", 0)
 
+    ultima_partida = player_updated_at.get(player, None)
+
     if partidas == 0:
+        # Se tiver data da última partida, atualiza só o updated_at no banco
+        if ultima_partida:
+            print(f"⚠️ {player} sem partidas na API — atualizando apenas updated_at: {ultima_partida}")
+            return ("only_date", player, ultima_partida)
+        print(f"⚠️ {player} sem partidas na API e sem data disponível — ignorando")
         return None
 
     kills = stats.get("kills", 0)
@@ -121,8 +128,6 @@ def buscar_stats(player, p_id):
     kr = round(kills / partidas, 2)
     dano_medio = int(dano_total / partidas)
 
-    ultima_partida = player_updated_at.get(player, None)
-
     print(f"⚡ {player} processado")
 
     return (
@@ -134,6 +139,7 @@ def buscar_stats(player, p_id):
 print("⚡ Buscando estatísticas em paralelo...")
 
 resultados = []
+only_date_updates = []
 
 with ThreadPoolExecutor(max_workers=5) as executor:
     futures = [
@@ -143,10 +149,16 @@ with ThreadPoolExecutor(max_workers=5) as executor:
 
     for future in as_completed(futures):
         resultado = future.result()
-        if resultado:
+        if resultado is None:
+            continue
+        if resultado[0] == "only_date":
+            only_date_updates.append((resultado[2], resultado[1]))
+        else:
             resultados.append(resultado)
 
 print(f"✅ {len(resultados)} jogadores com stats válidas.")
+if only_date_updates:
+    print(f"📅 {len(only_date_updates)} jogador(es) com apenas updated_at para atualizar.")
 
 try:
     conn = psycopg2.connect(DATABASE_URL)
@@ -176,6 +188,15 @@ try:
     """
     cursor.executemany(sql, resultados)
 
+    # Atualiza only_date — apenas updated_at para jogadores sem stats na API
+    if only_date_updates:
+        for updated_at, nick in only_date_updates:
+            cursor.execute(
+                "UPDATE ranking_squad SET updated_at = %s WHERE nick = %s AND updated_at IS NULL",
+                (updated_at, nick)
+            )
+            print(f"📅 updated_at atualizado para {nick}: {updated_at}")
+
     # ===============================
     # SNAPSHOT SEMANAL
     # ===============================
@@ -183,15 +204,12 @@ try:
     semana_anterior = semana_atual - timedelta(weeks=1)
     print(f"📊 Salvando snapshot semanal para semana de {semana_atual}...")
 
-    # Verifica se é o primeiro sync da semana atual
     cursor.execute(
         "SELECT COUNT(*) FROM ranking_semanal WHERE semana = %s",
         (semana_atual,)
     )
     ja_existe_semana_atual = cursor.fetchone()[0] > 0
 
-    # Se for o primeiro sync da semana, atualiza a semana anterior com os valores
-    # atuais da API para garantir que o delta comece do zero corretamente
     if not ja_existe_semana_atual:
         print(f"🔄 Primeiro sync da semana. Atualizando snapshot de {semana_anterior}...")
         sql_atualiza_anterior = """
