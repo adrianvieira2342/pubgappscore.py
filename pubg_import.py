@@ -187,7 +187,7 @@ try:
         ELSE ranking_squad.atualizado_em
     END,
     updated_at = CASE
-        WHEN EXCLUDED.updated_at IS NOT NULL THEN EXCLUDED.updated_at
+        updated_at = COALESCE(EXCLUDED.updated_at, ranking_squad.updated_at)
         ELSE ranking_squad.updated_at
     END
     """
