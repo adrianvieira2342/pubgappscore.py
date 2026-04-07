@@ -200,11 +200,9 @@ if not df_bruto.empty:
 
     def aplicar_decaimento(df_local, col_score):
         hoje = pd.Timestamp.utcnow()
-        df_local["updated_at"] = pd.to_datetime(df_local["updated_at"], utc=True, errors="coerce")
+        df_local["updated_at"] = pd.to_datetime(df_local["updated_at"], errors="coerce").dt.tz_localize("UTC")
         df_local["atualizado_em"] = pd.to_datetime(df_local["atualizado_em"], utc=True, errors="coerce")
-        # Usa updated_at se disponível, senão atualizado_em como fallback
         df_local["data_referencia"] = df_local["updated_at"].fillna(df_local["atualizado_em"])
-        # Se ainda for NaT, usa uma data muito antiga para garantir penalidade máxima
         df_local["data_referencia"] = df_local["data_referencia"].fillna(
             pd.Timestamp("2000-01-01", tz="UTC")
         )
