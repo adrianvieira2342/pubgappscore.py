@@ -386,8 +386,8 @@ if not df_bruto.empty:
             df_semanal["semana"] = pd.to_datetime(df_semanal["semana"]).dt.normalize()
             semanas_disponiveis = sorted(df_semanal["semana"].unique(), reverse=True)
 
-            def formatar_semana(s):
-                dt = pd.Timestamp(s)
+        def formatar_semana(s):
+            dt = pd.Timestamp(s)
             primeiro_dia_mes = dt.replace(day=1)
             primeira_segunda = primeiro_dia_mes - pd.Timedelta(days=primeiro_dia_mes.weekday())
             num_semana_mes = ((dt - primeira_segunda).days // 7) + 1
