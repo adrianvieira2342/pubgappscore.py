@@ -151,7 +151,7 @@ if __name__ == "__main__":
     else:
         conn = psycopg2.connect(DATABASE_URL)
 
-         --- PASSO IMPORTANTE: LIMPANDO O HISTÓRICO PARA REPROCESSAR ---
+        # --- PASSO IMPORTANTE: LIMPANDO O HISTÓRICO PARA REPROCESSAR ---
         print("🧹 Limpando histórico de partidas para reprocessar corretamente...")
         with conn.cursor() as c:
             c.execute("DELETE FROM matches_processadas;")
