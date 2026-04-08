@@ -144,7 +144,7 @@ def grafico_horizontal(df, col, titulo, cor):
     st.plotly_chart(fig, use_container_width=True)
 
 st.markdown(
-    "<h1 style='text-align:left;'>🏆 PUBG Ranking Squad - Season 40</h1>",
+    "<h1 style='text-align:left;'>🏆 PUBG Ranking Squad - Season 41</h1>",
     unsafe_allow_html=True
 )
 
