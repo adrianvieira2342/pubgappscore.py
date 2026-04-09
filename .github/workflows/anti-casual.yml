@@ -1,7 +1,7 @@
 name: Anti-Casual Sync
 on:
   schedule:
-    - cron: '0 */3 * * *'
+    - cron: '0 */1 * * *'
   workflow_dispatch:
 env:
   FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
