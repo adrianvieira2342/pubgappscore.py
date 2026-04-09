@@ -387,7 +387,7 @@ if not df_bruto.empty:
             df_semanal["semana"] = pd.to_datetime(df_semanal["semana"]).dt.normalize()
 
             # FILTRO: Mantém apenas registros a partir de hoje (8 de abril de 2026)
-            data_corte = pd.Timestamp("2026-04-08")
+            data_corte = pd.Timestamp("2026-04-07")
             df_semanal = df_semanal[df_semanal["semana"] >= data_corte].copy()
 
             if not df_semanal.empty:
