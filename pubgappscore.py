@@ -383,14 +383,17 @@ if not df_bruto.empty:
 
     if opcao_periodo == "📅 Por Semana":
         if not df_semanal.empty:
-            # Normalizar a coluna de data
-            df_semanal["semana"] = pd.to_datetime(df_semanal["semana"]).dt.normalize()
+            # Força a conversão para datetime e remove o fuso horário para comparação segura
+            df_semanal["semana"] = pd.to_datetime(df_semanal["semana"]).dt.tz_localize(None).dt.normalize()
 
-            # FILTRO: Mantém apenas registros a partir de hoje (8 de abril de 2026)
-            data_corte = pd.Timestamp("2026-04-07")
+            # Define a data de hoje sem fuso horário
+            data_corte = pd.Timestamp("2026-04-08").normalize()
+            
+            # Filtra: Garante que pegue tudo de hoje em diante
             df_semanal = df_semanal[df_semanal["semana"] >= data_corte].copy()
 
             if not df_semanal.empty:
+                # O restante do código de formatação continua aqui...
                 semanas_disponiveis = sorted(df_semanal["semana"].unique(), reverse=True)
 
                 def formatar_semana(s):
