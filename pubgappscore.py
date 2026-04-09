@@ -408,13 +408,28 @@ if not df_bruto.empty:
                     key="filtro_semana_nova"
                 )
 
-                df_graf = df_semanal[df_semanal["semana"] == semana_selecionada].copy()
-                # Garante que todos os players apareçam nos gráficos, mesmo sem dados na semana
-                todos_nicks = df_valid[["nick"]].drop_duplicates()
-                df_graf = todos_nicks.merge(df_graf, on="nick", how="left")
+                df_semana_filtrada = df_semanal[df_semanal["semana"] == semana_selecionada].copy()
+
+                # Normaliza nicks para comparação (sem espaços, sem case)
+                nicks_validos = df_valid["nick"].str.strip().tolist()
+                nicks_semana = df_semana_filtrada["nick"].str.strip().tolist() if not df_semana_filtrada.empty else []
+                nicks_faltando = [n for n in nicks_validos if n not in nicks_semana]
+
+                # Adiciona linhas zeradas para players sem dados na semana
+                if nicks_faltando:
+                    colunas = df_semana_filtrada.columns.tolist() if not df_semana_filtrada.empty else ["nick", "kills", "headshots", "vitorias", "dano_medio"]
+                    linhas_vazias = pd.DataFrame([
+                        {col: (nick if col == "nick" else 0) for col in colunas}
+                        for nick in nicks_faltando
+                    ])
+                    df_graf = pd.concat([df_semana_filtrada, linhas_vazias], ignore_index=True)
+                else:
+                    df_graf = df_semana_filtrada.copy()
+
                 for _col in ["kills", "headshots", "vitorias", "dano_medio"]:
                     if _col in df_graf.columns:
                         df_graf[_col] = pd.to_numeric(df_graf[_col], errors="coerce").fillna(0).astype(int)
+
                 st.caption(f"📊 Dados atuais: {semanas_labels[semana_selecionada]}")
             else:
                 st.info("Nenhum dado encontrado para a Temporada 41.")
