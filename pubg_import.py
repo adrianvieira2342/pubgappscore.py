@@ -82,7 +82,7 @@ def buscar_data_partida(nick, match_id):
     except Exception:
         return nick, None
 
-with ThreadPoolExecutor(max_workers=5) as executor:
+with ThreadPoolExecutor(max_workers=10) as executor:
     futures = [
         executor.submit(buscar_data_partida, nick, match_id)
         for nick, match_id in player_last_match.items()
@@ -136,7 +136,7 @@ print("⚡ Buscando estatísticas em paralelo...")
 resultados = []
 only_date_updates = []
 
-with ThreadPoolExecutor(max_workers=5) as executor:
+with ThreadPoolExecutor(max_workers=10) as executor:
     futures = [
         executor.submit(buscar_stats, player, p_id)
         for player, p_id in player_ids.items()
