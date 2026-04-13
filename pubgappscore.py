@@ -43,7 +43,6 @@ def checar_e_atualizar():
         if precisa_atualizar:
             with st.spinner("⏳ Atualizando dados do ranking..."):
                 subprocess.run([sys.executable, "pubg_import.py"], check=True)
-        # Se não precisar atualizar, carrega os dados do banco instantaneamente
 
     except Exception as e:
         st.warning(f"Erro ao verificar atualização: {e}")
@@ -431,18 +430,42 @@ if not df_bruto.empty:
                     return f"Semana #{((quinta_feira.day - 1) // 7) + 1} - {MESES_PT[quinta_feira.month].capitalize()} {quinta_feira.year}"
 
                 semanas_labels = {s: formatar_semana(s) for s in semanas_disponiveis}
+                opcoes_finais = list(semanas_labels.keys())
 
                 semana_selecionada = st.selectbox(
                     "Selecione a semana:",
-                    options=list(semanas_labels.keys()),
+                    options=opcoes_finais,
                     format_func=lambda s: semanas_labels[s],
                     key="filtro_semana_nova"
                 )
 
-                df_graf_bruto = df_semanal[df_semanal["semana"] == semana_selecionada].copy()
+                df_semana_atual = df_semanal[df_semanal["semana"] == semana_selecionada].copy()
+
+                idx_semana = opcoes_finais.index(semana_selecionada)
+                if idx_semana + 1 < len(opcoes_finais):
+                    semana_anterior = opcoes_finais[idx_semana + 1]
+                    df_semana_anterior = df_semanal[df_semanal["semana"] == semana_anterior].copy()
+                    df_semana_anterior = df_semana_anterior.set_index("nick")
+
+                    def calcular_diff(row, col):
+                        nick = row["nick"]
+                        if nick in df_semana_anterior.index:
+                            return row[col] - df_semana_anterior.loc[nick, col]
+                        return 0
+
+                    for col in ["partidas", "vitorias", "kills", "assists", "headshots", "revives", "top10"]:
+                        df_semana_atual[col] = df_semana_atual.apply(lambda r: calcular_diff(r, col), axis=1)
+
+                    df_semana_atual["kills_delta"] = df_semana_atual["kills"]
+                    df_semana_atual["dano_medio"] = df_semana_atual.apply(
+                        lambda r: r["dano_medio"] if r["kills_delta"] > 0 else 0, axis=1
+                    )
+                    df_semana_atual = df_semana_atual.drop(columns=["kills_delta"])
+                else:
+                    st.caption("📊 Estatísticas da Semana")
 
                 df_graf = pd.DataFrame({"nick": todos_os_nicks})
-                df_graf = df_graf.merge(df_graf_bruto, on="nick", how="left").fillna(0)
+                df_graf = df_graf.merge(df_semana_atual, on="nick", how="left").fillna(0)
 
                 st.caption(f"📊 Dados atuais: {semanas_labels[semana_selecionada]}")
             else:
