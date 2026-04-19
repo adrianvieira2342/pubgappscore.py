@@ -174,6 +174,18 @@ def grafico_horizontal(df, col, titulo, cor):
     )
     st.plotly_chart(fig, use_container_width=True)
 
+def aplicar_deducoes_bot(df_local, df_bots_raw):
+    if not df_bots_raw.empty:
+        for _, row_bot in df_bots_raw.iterrows():
+            nick_bot = row_bot["nick"]
+            if nick_bot in df_local["nick"].values:
+                for col in ["partidas", "vitorias", "kills", "assists", "headshots", "revives", "top10"]:
+                    if col in df_local.columns:
+                        v_total = df_local.loc[df_local["nick"] == nick_bot, col].values[0]
+                        v_casual = abs(row_bot[col])
+                        df_local.loc[df_local["nick"] == nick_bot, col] = max(0, v_total - v_casual)
+    return df_local
+
 st.markdown(
     "<h1 style='text-align:left;'>🏆 PUBG Ranking Squad - Season 41</h1>",
     unsafe_allow_html=True
@@ -463,6 +475,9 @@ if not df_bruto.empty:
                     df_semana_atual = df_semana_atual.drop(columns=["kills_delta"])
                 else:
                     st.caption("📊 Estatísticas da Semana")
+
+                # Aplica deduções do ranking_bot na performance semanal
+                df_semana_atual = aplicar_deducoes_bot(df_semana_atual, df_bots_raw)
 
                 df_graf = pd.DataFrame({"nick": todos_os_nicks})
                 df_graf = df_graf.merge(df_semana_atual, on="nick", how="left").fillna(0)
