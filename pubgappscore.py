@@ -110,6 +110,19 @@ def get_data_semanal():
         st.error(f"Erro ao buscar dados semanais: {e}")
         return pd.DataFrame()
 
+def get_data_bot_semanal():
+    try:
+        conn = st.connection(
+            "postgresql",
+            type="sql",
+            url=st.secrets["DATABASE_URL"]
+        )
+        df = conn.query("SELECT * FROM ranking_bot_semanal ORDER BY semana DESC", ttl=0)
+        return df
+    except Exception as e:
+        st.error(f"Erro ao buscar dados semanais do bot: {e}")
+        return pd.DataFrame()
+
 def processar_ranking_completo(df_ranking, col_score):
     total = len(df_ranking)
     novos_nicks = []
@@ -174,16 +187,31 @@ def grafico_horizontal(df, col, titulo, cor):
     )
     st.plotly_chart(fig, use_container_width=True)
 
-def aplicar_deducoes_bot(df_local, df_bots_raw):
-    if not df_bots_raw.empty:
-        for _, row_bot in df_bots_raw.iterrows():
-            nick_bot = row_bot["nick"]
-            if nick_bot in df_local["nick"].values:
-                for col in ["partidas", "vitorias", "kills", "assists", "headshots", "revives", "top10"]:
-                    if col in df_local.columns:
-                        v_total = df_local.loc[df_local["nick"] == nick_bot, col].values[0]
-                        v_casual = abs(row_bot[col])
-                        df_local.loc[df_local["nick"] == nick_bot, col] = max(0, v_total - v_casual)
+def aplicar_deducoes_bot_semanal(df_local, df_bot_semanal, semana_atual, semana_anterior=None):
+    if df_bot_semanal.empty:
+        return df_local
+
+    df_bot_semanal["semana"] = pd.to_datetime(df_bot_semanal["semana"]).dt.tz_localize(None).dt.normalize()
+
+    bot_atual = df_bot_semanal[df_bot_semanal["semana"] == semana_atual].set_index("nick")
+
+    if semana_anterior is not None:
+        bot_anterior = df_bot_semanal[df_bot_semanal["semana"] == semana_anterior].set_index("nick")
+    else:
+        bot_anterior = pd.DataFrame()
+
+    for nick in df_local["nick"].values:
+        if nick not in bot_atual.index:
+            continue
+        for col in ["partidas", "vitorias", "kills", "assists", "headshots", "revives", "top10"]:
+            if col not in df_local.columns:
+                continue
+            v_bot_atual = abs(bot_atual.loc[nick, col]) if nick in bot_atual.index else 0
+            v_bot_anterior = abs(bot_anterior.loc[nick, col]) if nick in bot_anterior.index else 0
+            delta_bot = max(0, v_bot_atual - v_bot_anterior)
+            v_total = df_local.loc[df_local["nick"] == nick, col].values[0]
+            df_local.loc[df_local["nick"] == nick, col] = max(0, v_total - delta_bot)
+
     return df_local
 
 st.markdown(
@@ -194,6 +222,7 @@ st.markdown(
 df_bruto = get_data("v_ranking_squad_completo")
 df_bots_raw = get_data("ranking_bot")
 df_semanal = get_data_semanal()
+df_bot_semanal = get_data_bot_semanal()
 
 if not df_bruto.empty:
     if "ultima_atualizacao" in df_bruto.columns:
@@ -454,8 +483,9 @@ if not df_bruto.empty:
                 df_semana_atual = df_semanal[df_semanal["semana"] == semana_selecionada].copy()
 
                 idx_semana = opcoes_finais.index(semana_selecionada)
-                if idx_semana + 1 < len(opcoes_finais):
-                    semana_anterior = opcoes_finais[idx_semana + 1]
+                semana_anterior = opcoes_finais[idx_semana + 1] if idx_semana + 1 < len(opcoes_finais) else None
+
+                if semana_anterior is not None:
                     df_semana_anterior = df_semanal[df_semanal["semana"] == semana_anterior].copy()
                     df_semana_anterior = df_semana_anterior.set_index("nick")
 
@@ -476,8 +506,12 @@ if not df_bruto.empty:
                 else:
                     st.caption("📊 Estatísticas da Semana")
 
-                # Aplica deduções do ranking_bot na performance semanal
-                df_semana_atual = aplicar_deducoes_bot(df_semana_atual, df_bots_raw)
+                # Aplica deduções do ranking_bot semanal (delta da semana)
+                df_semana_atual = aplicar_deducoes_bot_semanal(
+                    df_semana_atual, df_bot_semanal,
+                    semana_atual=semana_selecionada,
+                    semana_anterior=semana_anterior
+                )
 
                 df_graf = pd.DataFrame({"nick": todos_os_nicks})
                 df_graf = df_graf.merge(df_semana_atual, on="nick", how="left").fillna(0)
