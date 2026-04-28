@@ -2,6 +2,7 @@ import requests
 import time
 import os
 import psycopg2
+from datetime import date, timedelta
 
 API_KEY = os.getenv("PUBG_API_KEY") or "SUA_CHAVE_AQUI"
 DATABASE_URL = os.getenv("DATABASE_URL")
@@ -26,7 +27,7 @@ PLAYERS = {
     "Sidors":"account.60ab21fad4094824a32dc404420b914d",
     "Takato_Matsuki":"account.10d2403139bd4066a95dda1a3eefe1e8",
     "cmm01":"account.80cedebb935242469fdd177454a52e0e",
-    "Petrala":"account.aadd1c378ff841219d853b4ad2646286",    
+    "Petrala":"account.aadd1c378ff841219d853b4ad2646286",
     "O-CARRASCO":"account.78c6f7bd39da4274b5a3196ac624e92e",
 }
 
@@ -52,6 +53,42 @@ def get(url):
             time.sleep(2)
     print(f"❌ Falhou após 3 tentativas: {url}")
     return None
+
+def get_segunda_feira():
+    hoje = date.today()
+    return hoje - timedelta(days=hoje.weekday())
+
+def salvar_snapshot_bot_semanal(conn):
+    semana_atual = get_segunda_feira()
+    cur = conn.cursor()
+
+    cur.execute("SELECT nick, partidas, kr, vitorias, kills, dano_medio, assists, headshots, revives, top10, kill_dist_max, score FROM ranking_bot")
+    rows = cur.fetchall()
+
+    sql = """
+    INSERT INTO ranking_bot_semanal
+    (nick, semana, partidas, kr, vitorias, kills, dano_medio, assists, headshots, revives, top10, kill_dist_max, score)
+    VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+    ON CONFLICT (nick, semana) DO UPDATE SET
+    partidas=EXCLUDED.partidas,
+    kr=EXCLUDED.kr,
+    vitorias=EXCLUDED.vitorias,
+    kills=EXCLUDED.kills,
+    dano_medio=EXCLUDED.dano_medio,
+    assists=EXCLUDED.assists,
+    headshots=EXCLUDED.headshots,
+    revives=EXCLUDED.revives,
+    top10=EXCLUDED.top10,
+    kill_dist_max=EXCLUDED.kill_dist_max,
+    score=EXCLUDED.score
+    """
+
+    for row in rows:
+        cur.execute(sql, (row[0], semana_atual) + row[1:])
+
+    conn.commit()
+    cur.close()
+    print(f"📊 Snapshot semanal do ranking_bot salvo para semana de {semana_atual}")
 
 def processar_player(conn, player_name, player_id):
     print(f"\n🔎 Processando: {player_name}")
@@ -84,7 +121,6 @@ def processar_player(conn, player_name, player_id):
         attr = match_data["data"]["attributes"]
         created_at = attr.get("createdAt")
 
-        # FILTRO: Ignora partidas anteriores à data de hoje (Temporada anterior)
         if created_at < INICIO_TEMPORADA_41:
             print(f"    ⏩ {match_id} → partida antiga ({created_at}), ignorando")
             cur.execute("INSERT INTO matches_processadas (match_id, player_name) VALUES (%s, %s) ON CONFLICT DO NOTHING", (match_id, player_name))
@@ -177,6 +213,9 @@ if __name__ == "__main__":
         total_geral = 0
         for name, pid in PLAYERS.items():
             total_geral += processar_player(conn, name, pid)
+
+        # Salva snapshot semanal do ranking_bot
+        salvar_snapshot_bot_semanal(conn)
 
         conn.close()
         print(f"\n✅ Concluído! Total de penalidades aplicadas: {total_geral}")
