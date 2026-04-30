@@ -394,7 +394,7 @@ if not df_bruto.empty:
             "Score_Pro",
             f_pro,
             "Fórmula PRO: Equilíbrio entre sobrevivência e agressividade. Valoriza consistência em vitórias, kills, precisão, suporte e dano.",
-            "(Win Rate × 5) + (Kills/P × 0.5) + (Assists/P × 0.1) + (Headshots/P × 0.2) + (Revives/P × 0.33) + (Top10/P × 0.1) + (Dano Médio × 0.001)"
+            "(Win Rate: 5) | (Kills: 0.5) | (Assists: 0.1) | (Headshots: 0.2) | (Revives: 0.33) | (Top10: 0.1) | (Dano Médio: 0.001)"
         )
 
     with tab2:
@@ -410,7 +410,7 @@ if not df_bruto.empty:
             "Score_Team",
             f_team,
             "Fórmula TEAM: Foco total em suporte e sobrevivência coletiva. Valoriza vitórias, revives, assists e top10 por partida.",
-            "(Win Rate × 8) + (Revives/P × 5) + (Assists/P × 3) + (Top10/P × 2) + (Dano Médio × 0.001)"
+            "(Win Rate: 8) | (Revives: 5) | (Assists: 3) | (Top10: 2) | (Dano Médio: 0.001)"
         )
 
     with tab3:
@@ -426,7 +426,7 @@ if not df_bruto.empty:
             "Score_Elite",
             f_elite,
             "Fórmula ELITE: Prioriza KR, precisão de headshots por partida, alcance máximo e volume de dano.",
-            "(KR × 15) + (Headshots/P × 3) + (Kill Dist Máx × 0.05) + (Dano Médio × 0.003) + (Kills/P × 0.5)"
+            "(KR: 15) | (Headshots: 3) | (Kill Dist Máx: 0.05) | (Dano Médio: 0.003) | (Kills: 0.5)"
         )
 
     with tab4:
