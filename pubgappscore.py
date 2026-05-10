@@ -489,7 +489,7 @@ if not df_bruto.empty:
                     df_semana_anterior = df_semanal[df_semanal["semana"] == semana_anterior].copy()
                     df_semana_anterior = df_semana_anterior.set_index("nick")
 
-                    for col in ["partidas", "vitorias", "kills", "assists", "headshots", "revives", "top10", "dano_medio"]:
+                    for col in ["partidas", "vitorias", "kills", "assists", "headshots", "revives", "top10"]:
                         def calcular_diff(row, col=col):
                             nick = row["nick"]
                             if nick in df_semana_anterior.index:
@@ -497,6 +497,12 @@ if not df_bruto.empty:
                             return 0
 
                         df_semana_atual[col] = df_semana_atual.apply(calcular_diff, axis=1)
+
+                    df_semana_atual["kills_delta"] = df_semana_atual["kills"]
+                    df_semana_atual["dano_medio"] = df_semana_atual.apply(
+                        lambda r: r["dano_medio"] if r["kills_delta"] > 0 else 0, axis=1
+                    )
+                    df_semana_atual = df_semana_atual.drop(columns=["kills_delta"])
 
                     df_semana_atual["kr"] = (
                         df_semana_atual["kills"] /
