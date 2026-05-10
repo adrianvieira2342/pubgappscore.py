@@ -489,20 +489,20 @@ if not df_bruto.empty:
                     df_semana_anterior = df_semanal[df_semanal["semana"] == semana_anterior].copy()
                     df_semana_anterior = df_semana_anterior.set_index("nick")
 
-                    def calcular_diff(row, col):
-                        nick = row["nick"]
-                        if nick in df_semana_anterior.index:
-                            return row[col] - df_semana_anterior.loc[nick, col]
-                        return row[col]
+                    for col in ["partidas", "vitorias", "kills", "assists", "headshots", "revives", "top10", "dano_medio"]:
+                        def calcular_diff(row, col=col):
+                            nick = row["nick"]
+                            if nick in df_semana_anterior.index:
+                                return max(0, row[col] - df_semana_anterior.loc[nick, col])
+                            return 0
 
-                    for col in ["partidas", "vitorias", "kills", "assists", "headshots", "revives", "top10"]:
-                        df_semana_atual[col] = df_semana_atual.apply(lambda r: calcular_diff(r, col), axis=1)
+                        df_semana_atual[col] = df_semana_atual.apply(calcular_diff, axis=1)
 
-                    df_semana_atual["kills_delta"] = df_semana_atual["kills"]
-                    df_semana_atual["dano_medio"] = df_semana_atual.apply(
-                        lambda r: r["dano_medio"] if r["kills_delta"] > 0 else 0, axis=1
-                    )
-                    df_semana_atual = df_semana_atual.drop(columns=["kills_delta"])
+                    df_semana_atual["kr"] = (
+                        df_semana_atual["kills"] /
+                        df_semana_atual["partidas"].replace(0, 1)
+                    ).round(2)
+
                 else:
                     st.caption("📊 Estatísticas da Semana")
 
